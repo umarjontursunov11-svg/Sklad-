@@ -128,7 +128,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const savedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
         if (savedUsers) {
           const parsed = JSON.parse(savedUsers);
-          if (Array.isArray(parsed) && parsed.length > 0) setUsers(parsed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const updated = parsed.map((u: UserProfile) =>
+              u.id === 'usr-admin'
+                ? {
+                    ...u,
+                    name: 'Tursunov Umarjon (Admin)',
+                    full_name: 'Tursunov Umarjon',
+                  }
+                : u
+            );
+            setUsers(updated);
+          }
         }
 
         const savedProducts = localStorage.getItem(STORAGE_KEYS.PRODUCTS);

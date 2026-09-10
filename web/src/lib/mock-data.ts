@@ -38,8 +38,8 @@ export const INITIAL_WAREHOUSES: Warehouse[] = [
 export const INITIAL_USERS: UserProfile[] = [
   {
     id: 'usr-admin',
-    name: 'Ulug\'bek Karimov (Admin)',
-    full_name: 'Ulug\'bek Karimov',
+    name: 'Tursunov Umarjon (Admin)',
+    full_name: 'Tursunov Umarjon',
     email: 'admin@warehouse.io',
     phone: '+998 90 123-45-67',
     employee_id: 'EMP-0001',
