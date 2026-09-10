@@ -19,8 +19,11 @@ import {
   Sparkles,
   Search,
   UserPlus,
+  Trash2,
+  AlertOctagon,
 } from 'lucide-react';
 import { StaffRegisterModal } from '../../components/StaffRegisterModal';
+import { UserProfile } from '../../lib/types';
 
 export default function AdminPage() {
   const {
@@ -31,12 +34,15 @@ export default function AdminPage() {
     adminSessionVerified,
     setAdminSessionVerified,
     verifyAdminPin,
+    deleteStaffUser,
   } = useApp();
   const { t } = useI18n();
 
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // If user is not admin, deny access immediately
   if (currentUser.role !== 'admin') {
@@ -215,6 +221,7 @@ export default function AdminPage() {
                 <th className="py-3.5 px-4">Biriktirilgan Ombor</th>
                 <th className="py-3.5 px-4">Email & Telefon</th>
                 <th className="py-3.5 px-4">Ruxsat Cheklovlari</th>
+                <th className="py-3.5 px-4 text-right">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -283,6 +290,27 @@ export default function AdminPage() {
                         </span>
                       )}
                     </td>
+
+                    <td className="py-3.5 px-4 text-right">
+                      {u.id === 'usr-admin' || u.id === currentUser.id ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-lg bg-slate-850 text-slate-400 font-medium border border-white/5">
+                          <ShieldCheck className="w-3 h-3 text-rose-400" />
+                          Himoyalangan
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeletingUser(u);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 transition-all"
+                          title="Xodim hisobini o'chirish"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>O'chirish</span>
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -290,6 +318,85 @@ export default function AdminPage() {
           </table>
         </div>
       </div>
+
+      {/* Delete Staff Confirmation Modal (Admin only) */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="relative w-full max-w-md p-6 rounded-3xl glass-panel border border-rose-500/30 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-500" />
+
+            <div className="flex items-start gap-3.5 mb-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <AlertOctagon className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Xodim hisobini o'chirish</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Ushbu amal faqat Administrator tomonidan amalga oshiriladi
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 mb-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-white/10 space-y-2 text-xs mb-4">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Xodim F.I.O:</span>
+                <span className="font-bold text-white">{deletingUser.full_name || deletingUser.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">EMP ID:</span>
+                <span className="font-mono font-bold text-cyan-300">{deletingUser.employee_id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Rol:</span>
+                <span className="font-bold uppercase text-indigo-300">{deletingUser.role.replace('_', ' ')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Email:</span>
+                <span className="text-slate-300">{deletingUser.email}</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 mb-5 leading-relaxed">
+              Haqiqatan ham ushbu xodim hisobini tizimdan butunlay o'chirmoqchimisiz? Ushbu harakat xavfsizlik audit jurnalida qayd etiladi.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeletingUser(null);
+                  setDeleteError(null);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const res = deleteStaffUser(deletingUser.id);
+                  if (!res.success) {
+                    setDeleteError(res.error || "O'chirishda xatolik yuz berdi!");
+                  } else {
+                    setDeletingUser(null);
+                    setDeleteError(null);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-xl shadow-lg shadow-rose-600/30 transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>O'chirishni tasdiqlash</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Staff Self-Registration Modal */}
       <StaffRegisterModal

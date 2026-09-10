@@ -19,6 +19,7 @@ interface AppContextType {
     role: UserRole;
     assigned_warehouse_id?: string | null;
   }) => { success: boolean; error?: string; user?: UserProfile };
+  deleteStaffUser: (userId: string) => { success: boolean; error?: string };
   products: Product[];
   productsWithStock: ProductWithStock[];
   stock: StockBalance[];
@@ -383,6 +384,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLoginLogs((prev) => [regLog, ...prev]);
 
     return { success: true, user: newUser };
+  };
+
+  const deleteStaffUser = (userId: string): { success: boolean; error?: string } => {
+    // Only Admin can delete staff
+    if (currentUser.role !== 'admin') {
+      return {
+        success: false,
+        error: "Xodimlarni o'chirish faqat Tizim Administratoriga ruxsat etilgan!",
+      };
+    }
+
+    // Protect main admin account
+    if (userId === 'usr-admin' || userId === currentUser.id) {
+      return {
+        success: false,
+        error: "Asosiy tizim administratorini o'chirib bo'lmaydi!",
+      };
+    }
+
+    const targetUser = users.find((u) => u.id === userId);
+    if (!targetUser) {
+      return {
+        success: false,
+        error: "Xodim topilmadi!",
+      };
+    }
+
+    // Remove user
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+
+    // If active user was the deleted user, fallback to main admin
+    if (currentUserId === userId) {
+      setCurrentUserIdState('usr-admin');
+    }
+
+    // Audit log
+    const delLog: LoginLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user_id: currentUser.id,
+      user_name: currentUser.full_name || currentUser.name,
+      employee_id: currentUser.employee_id,
+      role: currentUser.role,
+      event_type: 'logout',
+      ip_address: '127.0.0.1',
+      device_type: 'web',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+      details: {
+        action: 'staff_account_deleted',
+        deleted_employee_id: targetUser.employee_id,
+        deleted_user_name: targetUser.full_name || targetUser.name,
+        deleted_role: targetUser.role,
+      },
+      created_at: new Date().toISOString(),
+    };
+    setLoginLogs((prev) => [delLog, ...prev]);
+
+    return { success: true };
   };
 
   // Compute products with calculated stock per warehouse and total
@@ -1078,6 +1136,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUser,
         setCurrentUserId,
         registerStaffUser,
+        deleteStaffUser,
         products,
         productsWithStock,
         stock,
