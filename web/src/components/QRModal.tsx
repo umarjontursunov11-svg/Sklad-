@@ -5,7 +5,7 @@ import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
-import { Download, Printer, X, FileText, Check, Copy } from 'lucide-react';
+import { Download, Printer, X, FileText, Check, Copy, Tag } from 'lucide-react';
 
 interface QRModalProps {
   product: ProductWithStock | null;
@@ -86,6 +86,57 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
     doc.save(`Badge_${product.qr_code_data}.pdf`);
   };
 
+  const handleDownloadThermalPDF = (width = 50, height = 30) => {
+    if (!qrDataUrl) return;
+    const orientation = width >= height ? 'landscape' : 'portrait';
+    const doc = new jsPDF({
+      orientation,
+      unit: 'mm',
+      format: [width, height],
+    });
+
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.1);
+    doc.rect(0.5, 0.5, width - 1, height - 1);
+
+    const qrSize = Math.min(height - 3, width * 0.46);
+    const qrX = 1.5;
+    const qrY = (height - qrSize) / 2;
+
+    doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+
+    const textX = qrX + qrSize + 1.5;
+    const textWidth = width - textX - 1.5;
+
+    doc.setFontSize(width <= 42 ? 5 : 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text('OMNISTOCK', textX, 4);
+
+    doc.setFontSize(width <= 42 ? 6 : 7.5);
+    doc.setFont('helvetica', 'bold');
+    const titleLines = doc.splitTextToSize(product.name, textWidth);
+    doc.text(titleLines.slice(0, 2), textX, width <= 42 ? 7.5 : 8.5);
+
+    doc.setFontSize(width <= 42 ? 7 : 8.5);
+    doc.setFont('courier', 'bold');
+    doc.text(product.qr_code_data, textX, height - (width <= 42 ? 6.5 : 8));
+
+    if (height >= 28) {
+      doc.setFontSize(width <= 42 ? 5 : 6);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(
+        width <= 42
+          ? `${product.unit.toUpperCase()}`
+          : `${product.unit.toUpperCase()} | MIN: ${product.min_stock_level}`,
+        textX,
+        height - 2
+      );
+    }
+
+    doc.save(`Thermal_${width}x${height}mm_${product.qr_code_data}.pdf`);
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -152,6 +203,15 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
           >
             <Download className="w-4 h-4 text-indigo-400" />
             {t.downloadPng}
+          </button>
+
+          <button
+            onClick={() => handleDownloadThermalPDF(50, 30)}
+            className="flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors border border-white/5"
+            title="50x30mm Thermal Label"
+          >
+            <Tag className="w-4 h-4 text-emerald-400" />
+            50x30 Thermal
           </button>
 
           <button

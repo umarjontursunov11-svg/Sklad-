@@ -56,7 +56,7 @@ body {
   background: #4338ca;
 }
 
-/* Print Styles for QR Labels */
+/* Print Styles for QR Labels and Thermal Stickers */
 @media print {
   body {
     background: white !important;
@@ -72,5 +72,24 @@ body {
     page-break-inside: avoid;
     break-inside: avoid;
     border: 1px dashed #94a3b8 !important;
+  }
+
+  /* Thermal roll mode */
+  body.thermal-mode {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  body.thermal-mode .no-thermal-print {
+    display: none !important;
+  }
+  body.thermal-mode .thermal-sticker-page {
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    border: none !important;
   }
 }

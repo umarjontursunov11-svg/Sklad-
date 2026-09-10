@@ -5,7 +5,15 @@ import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
-import { Printer, Download, X, Layers } from 'lucide-react';
+import {
+  Printer,
+  Download,
+  X,
+  Layers,
+  Tag,
+  SlidersHorizontal,
+  Check,
+} from 'lucide-react';
 
 interface BatchQRPrintModalProps {
   products: ProductWithStock[];
@@ -13,16 +21,47 @@ interface BatchQRPrintModalProps {
   onClose: () => void;
 }
 
+type PrintMode = 'a4' | 'thermal';
+type ThermalPreset = '40x30' | '50x30' | '58x40' | 'custom';
+
 export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
   products,
   selectedIds,
   onClose,
 }) => {
   const { t } = useI18n();
+
+  // Print format state
+  const [printMode, setPrintMode] = useState<PrintMode>('thermal');
+  const [thermalPreset, setThermalPreset] = useState<ThermalPreset>('50x30');
+  const [customWidth, setCustomWidth] = useState<number>(50);
+  const [customHeight, setCustomHeight] = useState<number>(30);
+
+  // A4 state
+  const [labelsPerRow, setLabelsPerRow] = useState<number>(3);
+
   const [selectedList, setSelectedList] = useState<ProductWithStock[]>([]);
   const [qrMap, setQrMap] = useState<{ [id: string]: string }>({});
-  const [labelsPerRow, setLabelsPerRow] = useState<number>(3);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+
+  // Derive current thermal dimensions in mm
+  const labelWidth =
+    thermalPreset === '40x30'
+      ? 40
+      : thermalPreset === '50x30'
+      ? 50
+      : thermalPreset === '58x40'
+      ? 58
+      : Math.max(20, Number(customWidth) || 50);
+
+  const labelHeight =
+    thermalPreset === '40x30'
+      ? 30
+      : thermalPreset === '50x30'
+      ? 30
+      : thermalPreset === '58x40'
+      ? 40
+      : Math.max(15, Number(customHeight) || 30);
 
   useEffect(() => {
     const list = products.filter((p) => selectedIds.includes(p.id));
@@ -33,9 +72,10 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
       for (const item of list) {
         try {
           const url = await QRCode.toDataURL(item.qr_code_data, {
-            width: 300,
+            width: 400,
             margin: 1,
-            color: { dark: '#0f172a', light: '#ffffff' },
+            errorCorrectionLevel: 'M',
+            color: { dark: '#000000', light: '#ffffff' },
           });
           map[item.id] = url;
         } catch (e) {
@@ -50,86 +90,161 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
     }
   }, [products, selectedIds]);
 
+  // Handle PDF Export
   const handleExportPDF = async () => {
     if (selectedList.length === 0) return;
     setIsGenerating(true);
 
     try {
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
+      if (printMode === 'thermal') {
+        // Continuous label PDF: each page is exactly 1 thermal label sticker [width, height]
+        const orientation = labelWidth >= labelHeight ? 'landscape' : 'portrait';
+        const doc = new jsPDF({
+          orientation,
+          unit: 'mm',
+          format: [labelWidth, labelHeight],
+        });
 
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 10;
-      const cols = labelsPerRow;
-      const rows = cols === 2 ? 4 : 5;
+        for (let i = 0; i < selectedList.length; i++) {
+          const item = selectedList[i];
+          const qrUrl = qrMap[item.id];
 
-      const labelWidth = (pageWidth - margin * 2 - (cols - 1) * 5) / cols;
-      const labelHeight = (pageHeight - margin * 2 - (rows - 1) * 5) / rows;
+          if (i > 0) {
+            doc.addPage([labelWidth, labelHeight], orientation);
+          }
 
-      let colIdx = 0;
-      let rowIdx = 0;
+          // Optional very thin border for visual verification
+          doc.setDrawColor(220, 220, 220);
+          doc.setLineWidth(0.1);
+          doc.rect(0.5, 0.5, labelWidth - 1, labelHeight - 1);
 
-      for (let i = 0; i < selectedList.length; i++) {
-        const item = selectedList[i];
-        const qrUrl = qrMap[item.id];
+          // Scaled proportions for thermal labels
+          const qrSize = Math.min(labelHeight - 3, labelWidth * 0.46);
+          const qrX = 1.5;
+          const qrY = (labelHeight - qrSize) / 2;
 
-        if (i > 0 && i % (cols * rows) === 0) {
-          doc.addPage();
-          colIdx = 0;
-          rowIdx = 0;
+          if (qrUrl) {
+            doc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+          }
+
+          // Text content on right side
+          const textX = qrX + qrSize + 1.5;
+          const textWidth = labelWidth - textX - 1.5;
+
+          // Header Brand tag
+          doc.setFontSize(labelWidth <= 42 ? 5 : 6);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(0, 0, 0);
+          doc.text('OMNISTOCK', textX, 4);
+
+          // Product Name (clamped to 1-2 lines)
+          doc.setFontSize(labelWidth <= 42 ? 6 : 7.5);
+          doc.setFont('helvetica', 'bold');
+          const titleLines = doc.splitTextToSize(item.name, textWidth);
+          doc.text(titleLines.slice(0, 2), textX, labelWidth <= 42 ? 7.5 : 8.5);
+
+          // SKU / QR Code (Prioritized readability!)
+          const skuY = labelHeight - (labelWidth <= 42 ? 6.5 : 8);
+          doc.setFontSize(labelWidth <= 42 ? 7 : 8.5);
+          doc.setFont('courier', 'bold');
+          doc.text(item.qr_code_data, textX, skuY);
+
+          // Unit & Min Stock (secondary info, small or dropped if 40x30 is tight)
+          if (labelHeight >= 28) {
+            doc.setFontSize(labelWidth <= 42 ? 5 : 6);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 80, 80);
+            doc.text(
+              labelWidth <= 42
+                ? `${item.unit.toUpperCase()}`
+                : `${item.unit.toUpperCase()} | MIN: ${item.min_stock_level}`,
+              textX,
+              labelHeight - 2
+            );
+          }
         }
 
-        const x = margin + colIdx * (labelWidth + 5);
-        const y = margin + rowIdx * (labelHeight + 5);
+        doc.save(
+          `Thermal_Labels_${labelWidth}x${labelHeight}mm_${selectedList.length}_items.pdf`
+        );
+      } else {
+        // Standard A4 sheet export
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+        });
 
-        doc.setDrawColor(203, 213, 225);
-        doc.setLineWidth(0.4);
-        doc.roundedRect(x, y, labelWidth, labelHeight, 2, 2);
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const margin = 10;
+        const cols = labelsPerRow;
+        const rows = cols === 2 ? 4 : 5;
 
-        doc.setFillColor(99, 102, 241);
-        doc.roundedRect(x, y, labelWidth, 5, 2, 2, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(6);
-        doc.setFont('helvetica', 'bold');
-        doc.text('OMNISTOCK PRO TAG', x + labelWidth / 2, y + 3.8, { align: 'center' });
+        const a4LabelWidth = (pageWidth - margin * 2 - (cols - 1) * 5) / cols;
+        const a4LabelHeight = (pageHeight - margin * 2 - (rows - 1) * 5) / rows;
 
-        if (qrUrl) {
-          const qrSize = Math.min(labelWidth * 0.45, labelHeight * 0.55);
-          doc.addImage(qrUrl, 'PNG', x + 3, y + 7, qrSize, qrSize);
+        let colIdx = 0;
+        let rowIdx = 0;
+
+        for (let i = 0; i < selectedList.length; i++) {
+          const item = selectedList[i];
+          const qrUrl = qrMap[item.id];
+
+          if (i > 0 && i % (cols * rows) === 0) {
+            doc.addPage();
+            colIdx = 0;
+            rowIdx = 0;
+          }
+
+          const x = margin + colIdx * (a4LabelWidth + 5);
+          const y = margin + rowIdx * (a4LabelHeight + 5);
+
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.4);
+          doc.roundedRect(x, y, a4LabelWidth, a4LabelHeight, 2, 2);
+
+          doc.setFillColor(99, 102, 241);
+          doc.roundedRect(x, y, a4LabelWidth, 5, 2, 2, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(6);
+          doc.setFont('helvetica', 'bold');
+          doc.text('OMNISTOCK PRO TAG', x + a4LabelWidth / 2, y + 3.8, { align: 'center' });
+
+          if (qrUrl) {
+            const qrSize = Math.min(a4LabelWidth * 0.45, a4LabelHeight * 0.55);
+            doc.addImage(qrUrl, 'PNG', x + 3, y + 7, qrSize, qrSize);
+          }
+
+          const textX = x + a4LabelWidth * 0.48;
+          doc.setTextColor(15, 23, 42);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          const lines = doc.splitTextToSize(item.name, a4LabelWidth * 0.5);
+          doc.text(lines.slice(0, 2), textX, y + 11);
+
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(71, 85, 105);
+          doc.text(`CODE:`, textX, y + 22);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(15, 23, 42);
+          doc.text(item.qr_code_data, textX, y + 26);
+
+          doc.setFontSize(6.5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100, 116, 139);
+          doc.text(`Unit: ${item.unit.toUpperCase()} | Min: ${item.min_stock_level}`, textX, y + 32);
+
+          colIdx++;
+          if (colIdx >= cols) {
+            colIdx = 0;
+            rowIdx++;
+          }
         }
 
-        const textX = x + labelWidth * 0.48;
-        doc.setTextColor(15, 23, 42);
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'bold');
-        const lines = doc.splitTextToSize(item.name, labelWidth * 0.5);
-        doc.text(lines.slice(0, 2), textX, y + 11);
-
-        doc.setFontSize(7);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(71, 85, 105);
-        doc.text(`CODE:`, textX, y + 22);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(15, 23, 42);
-        doc.text(item.qr_code_data, textX, y + 26);
-
-        doc.setFontSize(6.5);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(100, 116, 139);
-        doc.text(`Unit: ${item.unit.toUpperCase()} | Min: ${item.min_stock_level}`, textX, y + 32);
-
-        colIdx++;
-        if (colIdx >= cols) {
-          colIdx = 0;
-          rowIdx++;
-        }
+        doc.save(`A4_Batch_Labels_${selectedList.length}_items.pdf`);
       }
-
-      doc.save(`WMS_Batch_Labels_${selectedList.length}_items.pdf`);
     } catch (e) {
       console.error(e);
     } finally {
@@ -137,20 +252,101 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
     }
   };
 
+  // Handle Browser Printing with dynamic @page styling
   const handlePrintWindow = () => {
+    // Inject dynamic print stylesheet matching exact label dimensions
+    const styleId = 'thermal-print-page-style';
+    let styleTag = document.getElementById(styleId) as HTMLStyleElement | null;
+    if (!styleTag) {
+      styleTag = document.createElement('style');
+      styleTag.id = styleId;
+      document.head.appendChild(styleTag);
+    }
+
+    if (printMode === 'thermal') {
+      styleTag.innerHTML = `
+        @page {
+          size: ${labelWidth}mm ${labelHeight}mm !important;
+          margin: 0 !important;
+        }
+        @media print {
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            width: ${labelWidth}mm !important;
+            background: white !important;
+          }
+          .thermal-print-container {
+            display: block !important;
+            width: ${labelWidth}mm !important;
+          }
+          .thermal-sticker-page {
+            width: ${labelWidth}mm !important;
+            height: ${labelHeight}mm !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            margin: 0 !important;
+            padding: 1.5mm !important;
+            box-sizing: border-box !important;
+            display: flex !important;
+            align-items: center !important;
+            overflow: hidden !important;
+            border: none !important;
+          }
+          .a4-print-container {
+            display: none !important;
+          }
+        }
+      `;
+      document.body.classList.add('thermal-mode');
+    } else {
+      styleTag.innerHTML = `
+        @page {
+          size: A4 portrait;
+          margin: 8mm;
+        }
+        @media print {
+          .thermal-print-container {
+            display: none !important;
+          }
+          .a4-print-container {
+            display: grid !important;
+          }
+        }
+      `;
+      document.body.classList.remove('thermal-mode');
+    }
+
     window.print();
+
+    // Clean up after print window closes
+    window.addEventListener(
+      'afterprint',
+      () => {
+        document.body.classList.remove('thermal-mode');
+        if (styleTag && styleTag.parentNode) {
+          styleTag.parentNode.removeChild(styleTag);
+        }
+      },
+      { once: true }
+    );
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-      <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
-        <div className="flex items-center justify-between p-5 border-b border-white/10 bg-slate-900/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
+      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-slate-900/60">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-500/20 text-indigo-400 rounded-xl border border-indigo-500/30">
-              <Layers className="w-5 h-5" />
+              <Printer className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">{t.batchModalTitle}</h3>
+              <h3 className="text-base sm:text-lg font-bold text-white">
+                {t.batchModalTitle}
+              </h3>
               <p className="text-xs text-slate-400">
                 {selectedList.length} {t.batchModalDesc}
               </p>
@@ -165,86 +361,272 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-3 bg-slate-950/40 border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">{t.gridLayout}</span>
-            <button
-              onClick={() => setLabelsPerRow(2)}
-              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
-                labelsPerRow === 2
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              {t.columns2}
-            </button>
-            <button
-              onClick={() => setLabelsPerRow(3)}
-              className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors ${
-                labelsPerRow === 3
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              {t.columns3}
-            </button>
+        {/* Mode Selector & Size Controls */}
+        <div className="p-4 bg-slate-950/70 border-b border-white/5 space-y-3">
+          {/* Print Mode Switcher */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 p-1 bg-slate-900 rounded-xl border border-white/10 text-xs">
+              <button
+                onClick={() => setPrintMode('thermal')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  printMode === 'thermal'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Tag className="w-3.5 h-3.5" />
+                <span>{t.thermalOption}</span>
+                <span className="text-[9px] px-1 py-0.2 bg-emerald-500/20 text-emerald-300 rounded font-mono">
+                  Zebra/Xprinter
+                </span>
+              </button>
+
+              <button
+                onClick={() => setPrintMode('a4')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  printMode === 'a4'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{t.a4Option}</span>
+              </button>
+            </div>
+
+            {/* Print & PDF Action Buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrintWindow}
+                className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl border border-white/10 transition-colors"
+              >
+                <Printer className="w-4 h-4 text-slate-300" />
+                {t.browserPrint}
+              </button>
+
+              <button
+                onClick={handleExportPDF}
+                disabled={isGenerating || selectedList.length === 0}
+                className="flex items-center gap-2 px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-colors disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                {isGenerating ? t.generating : t.downloadPdfSheet}
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePrintWindow}
-              className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl border border-white/10 transition-colors"
-            >
-              <Printer className="w-4 h-4 text-slate-300" />
-              {t.browserPrint}
-            </button>
-            <button
-              onClick={handleExportPDF}
-              disabled={isGenerating || selectedList.length === 0}
-              className="flex items-center gap-2 px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-colors disabled:opacity-50"
-            >
-              <Download className="w-4 h-4" />
-              {isGenerating ? t.generating : t.downloadPdfSheet}
-            </button>
-          </div>
+          {/* Sub-controls based on Print Mode */}
+          {printMode === 'thermal' ? (
+            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-white/5 text-xs">
+              <span className="text-slate-400 font-medium flex items-center gap-1">
+                <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                {t.labelSize}
+              </span>
+
+              {/* Presets */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { id: '40x30', label: '40 x 30 mm' },
+                  { id: '50x30', label: '50 x 30 mm' },
+                  { id: '58x40', label: '58 x 40 mm' },
+                  { id: 'custom', label: t.customSize },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => setThermalPreset(preset.id as ThermalPreset)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      thermalPreset === preset.id
+                        ? 'bg-indigo-600 text-white shadow'
+                        : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-white/5'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Size Inputs */}
+              {thermalPreset === 'custom' && (
+                <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-slate-400">{t.widthMm}:</span>
+                    <input
+                      type="number"
+                      min="20"
+                      max="150"
+                      value={customWidth}
+                      onChange={(e) => setCustomWidth(Number(e.target.value))}
+                      className="w-14 px-2 py-0.5 text-xs bg-slate-900 border border-white/10 rounded text-white text-center font-bold"
+                    />
+                  </div>
+                  <span className="text-slate-500">&times;</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-slate-400">{t.heightMm}:</span>
+                    <input
+                      type="number"
+                      min="15"
+                      max="150"
+                      value={customHeight}
+                      onChange={(e) => setCustomHeight(Number(e.target.value))}
+                      className="w-14 px-2 py-0.5 text-xs bg-slate-900 border border-white/10 rounded text-white text-center font-bold"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <span className="ml-auto text-[11px] text-emerald-400 font-mono hidden sm:inline">
+                {t.continuousRoll}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 pt-2 border-t border-white/5 text-xs">
+              <span className="text-slate-400">{t.gridLayout}</span>
+              <button
+                onClick={() => setLabelsPerRow(2)}
+                className={`px-3 py-1 text-xs rounded-lg font-semibold transition-colors ${
+                  labelsPerRow === 2
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-white/5'
+                }`}
+              >
+                {t.columns2}
+              </button>
+              <button
+                onClick={() => setLabelsPerRow(3)}
+                className={`px-3 py-1 text-xs rounded-lg font-semibold transition-colors ${
+                  labelsPerRow === 3
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-white/5'
+                }`}
+              >
+                {t.columns3}
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-950/60">
-          <div
-            className={`grid gap-4 ${
-              labelsPerRow === 2 ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
-            }`}
-          >
-            {selectedList.map((item) => (
-              <div
-                key={item.id}
-                className="qr-label-card relative flex items-center gap-3 p-3.5 bg-white text-slate-900 rounded-xl shadow-md border border-slate-200"
-              >
-                <div className="flex-shrink-0 w-20 h-20 bg-slate-50 rounded-lg p-1 border border-slate-100 flex items-center justify-center">
-                  {qrMap[item.id] ? (
-                    <img src={qrMap[item.id]} alt={item.name} className="w-full h-full object-contain" />
-                  ) : (
-                    <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent animate-spin rounded-full" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
-                    OmniStock Tag
-                  </span>
-                  <h4 className="text-xs font-bold text-slate-900 truncate" title={item.name}>
-                    {item.name}
-                  </h4>
-                  <div className="font-mono text-xs font-bold text-slate-700 mt-1">
-                    {item.qr_code_data}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">
-                    {t.unitField}: {item.unit} | {t.safetyMin}: {item.min_stock_level}
-                  </div>
-                </div>
+        {/* Labels Preview Grid / Live Viewport */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950/60">
+          {printMode === 'thermal' ? (
+            /* Thermal Continuous Roll Preview */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+                <span>
+                  Previewing 1:1 thermal stickers ({labelWidth}mm &times; {labelHeight}mm):
+                </span>
+                <span className="text-indigo-400 font-semibold">
+                  1 sticker = 1 print page feed
+                </span>
               </div>
-            ))}
-          </div>
+
+              <div className="thermal-print-container flex flex-wrap gap-4 justify-center sm:justify-start">
+                {selectedList.map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      width: `${labelWidth * 3.78}px`, // ~3.78px per mm at standard 96dpi display
+                      height: `${labelHeight * 3.78}px`,
+                      maxWidth: '100%',
+                    }}
+                    className="thermal-sticker-page relative flex items-center gap-2 p-2 bg-white text-black rounded-lg shadow-md border border-slate-300 box-border overflow-hidden select-none"
+                  >
+                    {/* QR Code Container */}
+                    <div className="flex-shrink-0 h-full flex items-center justify-center">
+                      {qrMap[item.id] ? (
+                        <img
+                          src={qrMap[item.id]}
+                          alt={item.name}
+                          className="h-full max-h-[88%] w-auto aspect-square object-contain"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 border-2 border-slate-800 border-t-transparent animate-spin rounded-full" />
+                      )}
+                    </div>
+
+                    {/* Text Details scaled proportionately */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-center h-full text-left leading-tight py-0.5">
+                      <span className="text-[8px] font-black tracking-wider text-slate-700 uppercase block truncate">
+                        OMNISTOCK
+                      </span>
+
+                      <h4
+                        className={`font-black text-black leading-snug line-clamp-2 ${
+                          labelWidth <= 42 ? 'text-[9px]' : 'text-[11px]'
+                        }`}
+                        title={item.name}
+                      >
+                        {item.name}
+                      </h4>
+
+                      {/* SKU / QR Code (Prioritized readability!) */}
+                      <div
+                        className={`font-mono font-black text-black tracking-tight mt-0.5 truncate ${
+                          labelWidth <= 42 ? 'text-[10px]' : 'text-xs'
+                        }`}
+                      >
+                        {item.qr_code_data}
+                      </div>
+
+                      {/* Unit / Min Threshold */}
+                      {labelHeight >= 28 && (
+                        <div className="text-[8px] font-semibold text-slate-600 mt-auto uppercase truncate">
+                          {labelWidth <= 42
+                            ? `${item.unit}`
+                            : `${item.unit} | Min: ${item.min_stock_level}`}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* A4 Sheet Grid Preview */
+            <div
+              className={`a4-print-container grid gap-4 ${
+                labelsPerRow === 2
+                  ? 'grid-cols-1 sm:grid-cols-2'
+                  : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+              }`}
+            >
+              {selectedList.map((item) => (
+                <div
+                  key={item.id}
+                  className="qr-label-card relative flex items-center gap-3 p-3.5 bg-white text-slate-900 rounded-xl shadow-md border border-slate-200"
+                >
+                  <div className="flex-shrink-0 w-20 h-20 bg-slate-50 rounded-lg p-1 border border-slate-100 flex items-center justify-center">
+                    {qrMap[item.id] ? (
+                      <img
+                        src={qrMap[item.id]}
+                        alt={item.name}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent animate-spin rounded-full" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
+                      OmniStock Tag
+                    </span>
+                    <h4
+                      className="text-xs font-bold text-slate-900 truncate"
+                      title={item.name}
+                    >
+                      {item.name}
+                    </h4>
+                    <div className="font-mono text-xs font-bold text-slate-700 mt-1">
+                      {item.qr_code_data}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {t.unitField}: {item.unit} | {t.safetyMin}: {item.min_stock_level}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
