@@ -3,19 +3,46 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
 import { useI18n } from '../../lib/i18n';
-import { Boxes, Search, AlertTriangle, ArrowDownUp, QrCode } from 'lucide-react';
+import {
+  Boxes,
+  Search,
+  AlertTriangle,
+  ArrowDownUp,
+  QrCode,
+  Edit2,
+  Check,
+  X,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { QuickTransactionModal } from '../../components/QuickTransactionModal';
 import { QRModal } from '../../components/QRModal';
+import { MatrixStockEditModal } from '../../components/MatrixStockEditModal';
 import { ProductWithStock } from '../../lib/types';
 
 export default function InventoryPage() {
-  const { productsWithStock, warehouses } = useApp();
+  const { productsWithStock, warehouses, adjustStockBalance } = useApp();
   const { t } = useI18n();
 
   const [search, setSearch] = useState('');
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<ProductWithStock | null>(null);
   const [qrProduct, setQrProduct] = useState<ProductWithStock | null>(null);
+  const [stockEditProduct, setStockEditProduct] = useState<ProductWithStock | null>(null);
+  const [inlineEdit, setInlineEdit] = useState<{ productId: string; warehouseId: string } | null>(null);
+  const [inlineValue, setInlineValue] = useState<string>('');
+
+  const handleSaveInline = (productId: string, warehouseId: string) => {
+    const val = parseFloat(inlineValue);
+    if (!isNaN(val)) {
+      adjustStockBalance({
+        productId,
+        warehouseId,
+        newQuantity: Math.max(0, val),
+        reason: "Ombor matritsasidan tezkor tahrirlandi",
+      });
+    }
+    setInlineEdit(null);
+  };
 
   const filtered = productsWithStock.filter((p) => {
     const matchesSearch =
@@ -123,11 +150,62 @@ export default function InventoryPage() {
                 {warehouses.map((wh) => {
                   const qty = item.warehouse_stock[wh.id] ?? 0;
                   const isWhLow = qty <= item.min_stock_level;
+                  const isEditing =
+                    inlineEdit?.productId === item.id && inlineEdit?.warehouseId === wh.id;
+
                   return (
-                    <td key={wh.id} className="py-3.5 px-4 text-right font-mono">
-                      <span className={isWhLow ? 'text-amber-400 font-bold' : 'text-slate-300'}>
-                        {qty}
-                      </span>
+                    <td key={wh.id} className="py-2.5 px-3 text-right font-mono">
+                      {isEditing ? (
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            autoFocus
+                            value={inlineValue}
+                            onChange={(e) => setInlineValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveInline(item.id, wh.id);
+                              if (e.key === 'Escape') setInlineEdit(null);
+                            }}
+                            className="w-16 px-1.5 py-0.5 text-xs text-right font-mono font-bold bg-slate-950 border border-indigo-400 rounded-md text-white focus:outline-none ring-1 ring-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveInline(item.id, wh.id)}
+                            className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                            title="Saqlash (Enter)"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInlineEdit(null)}
+                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                            title="Bekor qilish (Esc)"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => {
+                            setInlineEdit({ productId: item.id, warehouseId: wh.id });
+                            setInlineValue(String(qty));
+                          }}
+                          className="inline-flex items-center justify-end gap-1.5 cursor-pointer py-1 px-2 rounded-lg hover:bg-white/10 transition-colors group/cell"
+                          title="Miqdorni tahrirlash uchun bosing"
+                        >
+                          <span
+                            className={
+                              isWhLow ? 'text-amber-400 font-bold' : 'text-slate-200 font-semibold'
+                            }
+                          >
+                            {qty}
+                          </span>
+                          <Edit2 className="w-3 h-3 text-indigo-400 opacity-0 group-hover/cell:opacity-100 transition-opacity" />
+                        </div>
+                      )}
                     </td>
                   );
                 })}
@@ -139,18 +217,36 @@ export default function InventoryPage() {
                 </td>
 
                 <td className="py-3.5 px-4 text-center">
-                  <button
-                    onClick={() => setSelectedProduct(item)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors shadow-md shadow-indigo-600/20"
-                  >
-                    <ArrowDownUp className="w-3 h-3" /> {t.stockInOut}
-                  </button>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <button
+                      onClick={() => setStockEditProduct(item)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-500/40 rounded-lg transition-colors shadow-sm"
+                      title="Matritsa bo'yicha mahsulot sonini to'liq sozlash"
+                    >
+                      <SlidersHorizontal className="w-3 h-3 text-indigo-200" />
+                      <span>Sozlash</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedProduct(item)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg transition-colors"
+                      title="Kirim / Chiqim tranzaksiyasi"
+                    >
+                      <ArrowDownUp className="w-3 h-3 text-slate-400" />
+                      <span>{t.stockInOut}</span>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Stock Edit Modal (Matrix) */}
+      <MatrixStockEditModal
+        product={stockEditProduct}
+        onClose={() => setStockEditProduct(null)}
+      />
 
       {selectedProduct && (
         <QuickTransactionModal

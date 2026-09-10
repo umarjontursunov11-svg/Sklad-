@@ -56,6 +56,12 @@ interface AppContextType {
     quantity: number;
     notes?: string;
   }) => { success: boolean; error?: string; movement?: StockMovement };
+  adjustStockBalance: (params: {
+    productId: string;
+    warehouseId: string;
+    newQuantity: number;
+    reason?: string;
+  }) => { success: boolean; error?: string; oldQuantity?: number; newQuantity?: number };
   createSaleInvoice: (params: {
     warehouseId: string;
     customerName: string;
@@ -773,6 +779,95 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, movement: newMovement };
   };
 
+  const adjustStockBalance = (params: {
+    productId: string;
+    warehouseId: string;
+    newQuantity: number;
+    reason?: string;
+  }): { success: boolean; error?: string; oldQuantity?: number; newQuantity?: number } => {
+    const { productId, warehouseId, newQuantity, reason } = params;
+    const cleanQty = Math.max(0, Math.round(Number(newQuantity) * 1000) / 1000 || 0);
+
+    const product = products.find((p) => p.id === productId);
+    if (!product) {
+      return { success: false, error: 'Mahsulot topilmadi!' };
+    }
+
+    const wh = warehouses.find((w) => w.id === warehouseId);
+    if (!wh) {
+      return { success: false, error: 'Ombor topilmadi!' };
+    }
+
+    const currentItem = stock.find(
+      (s) => s.product_id === productId && s.warehouse_id === warehouseId
+    );
+    const oldQty = currentItem ? Number(currentItem.quantity) : 0;
+
+    if (oldQty === cleanQty) {
+      return { success: true, oldQuantity: oldQty, newQuantity: cleanQty };
+    }
+
+    const diff = cleanQty - oldQty;
+    const movementType: MovementType = diff > 0 ? 'inbound' : 'outbound';
+
+    setStock((prev) => {
+      const idx = prev.findIndex(
+        (s) => s.product_id === productId && s.warehouse_id === warehouseId
+      );
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = {
+          ...copy[idx],
+          quantity: cleanQty,
+          updated_at: new Date().toISOString(),
+        };
+        return copy;
+      } else {
+        return [
+          ...prev,
+          {
+            id: `stk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            product_id: productId,
+            warehouse_id: warehouseId,
+            quantity: cleanQty,
+            updated_at: new Date().toISOString(),
+          },
+        ];
+      }
+    });
+
+    // Record adjustment movement for transparency and auditability
+    const adjMovement: StockMovement = {
+      id: `mov-adj-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      product_id: productId,
+      warehouse_id: warehouseId,
+      target_warehouse_id: null,
+      movement_type: movementType,
+      quantity: Math.abs(diff),
+      user_id: currentUser?.id || 'usr-admin',
+      user_name: currentUser?.full_name || currentUser?.name || 'Admin',
+      employee_id: currentUser?.employee_id || null,
+      device_type: 'web',
+      timestamp: new Date().toISOString(),
+      notes: reason
+        ? `Ombor matritsasidan miqdor o'zgartirildi (${oldQty} -> ${cleanQty} ${product.unit}). Sabab: ${reason}`
+        : `Ombor matritsasidan to'g'rilandi: ${wh.name} (${oldQty} -> ${cleanQty} ${product.unit})`,
+    };
+    setMovements((prev) => [adjMovement, ...prev]);
+
+    recordLoginLog('movement_created', {
+      movement_id: adjMovement.id,
+      action: 'matrix_quantity_adjusted',
+      product_name: product.name,
+      warehouse_name: wh.name,
+      old_quantity: oldQty,
+      new_quantity: cleanQty,
+      difference: diff,
+    });
+
+    return { success: true, oldQuantity: oldQty, newQuantity: cleanQty };
+  };
+
   const createSaleInvoice = ({
     warehouseId,
     customerName,
@@ -1158,6 +1253,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProduct,
         deleteProduct,
         executeMovement,
+        adjustStockBalance,
         createSaleInvoice,
         updateInvoiceCreator,
         cancelInvoice,
