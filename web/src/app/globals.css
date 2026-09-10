@@ -62,8 +62,10 @@ body {
     background: white !important;
     color: black !important;
   }
-  .no-print {
+  .no-print,
+  .no-print * {
     display: none !important;
+    visibility: hidden !important;
   }
   .print-only {
     display: block !important;

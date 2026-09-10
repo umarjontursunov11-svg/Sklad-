@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
+import { printViaIframe, escapeHtml } from '../lib/print-utils';
 import { Download, Printer, X, FileText, Check, Copy, Tag } from 'lucide-react';
 
 interface QRModalProps {
@@ -138,11 +139,135 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!product || !qrDataUrl) return;
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Thermal Label - ${escapeHtml(product.qr_code_data)}</title>
+        <style>
+          @page {
+            size: 50mm 30mm;
+            margin: 0;
+          }
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+          }
+          html, body {
+            width: 50mm;
+            height: 30mm;
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #000000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .thermal-sticker {
+            width: 50mm;
+            height: 30mm;
+            display: flex;
+            align-items: center;
+            padding: 1.5mm;
+            box-sizing: border-box;
+            overflow: hidden;
+            border: none;
+          }
+          .qr-container {
+            height: 100%;
+            max-height: 90%;
+            aspect-ratio: 1/1;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .qr-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: pixelated;
+          }
+          .content-container {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            margin-left: 1.5mm;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            line-height: 1.15;
+            text-align: left;
+          }
+          .brand {
+            font-size: 8px;
+            font-weight: 900;
+            color: #334155;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .product-title {
+            font-size: 10.5px;
+            font-weight: 800;
+            color: #000000;
+            margin-top: 0.3mm;
+            line-height: 1.2;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+          }
+          .sku-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 11px;
+            font-weight: 900;
+            color: #000000;
+            letter-spacing: -0.2px;
+            margin-top: 0.6mm;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .unit-info {
+            font-size: 7.5px;
+            font-weight: 600;
+            color: #475569;
+            text-transform: uppercase;
+            margin-top: auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="thermal-sticker">
+          <div class="qr-container">
+            <img src="${qrDataUrl}" alt="QR" />
+          </div>
+          <div class="content-container">
+            <div class="brand">OMNISTOCK</div>
+            <div class="product-title">${escapeHtml(product.name)}</div>
+            <div class="sku-code">${escapeHtml(product.qr_code_data)}</div>
+            <div class="unit-info">${escapeHtml(product.unit.toUpperCase())} | MIN: ${product.min_stock_level}</div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    printViaIframe(html);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn no-print">
       <div className="relative w-full max-w-md p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
         <button
           onClick={onClose}

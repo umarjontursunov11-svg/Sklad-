@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
+import { printViaIframe, escapeHtml } from '../lib/print-utils';
 import {
   Printer,
   Download,
@@ -252,90 +253,273 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
     }
   };
 
-  // Handle Browser Printing with dynamic @page styling
+  // Handle Browser Printing with isolated clean iframe
   const handlePrintWindow = () => {
-    // Inject dynamic print stylesheet matching exact label dimensions
-    const styleId = 'thermal-print-page-style';
-    let styleTag = document.getElementById(styleId) as HTMLStyleElement | null;
-    if (!styleTag) {
-      styleTag = document.createElement('style');
-      styleTag.id = styleId;
-      document.head.appendChild(styleTag);
-    }
+    if (selectedList.length === 0) return;
 
     if (printMode === 'thermal') {
-      styleTag.innerHTML = `
-        @page {
-          size: ${labelWidth}mm ${labelHeight}mm !important;
-          margin: 0 !important;
-        }
-        @media print {
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            width: ${labelWidth}mm !important;
-            background: white !important;
-          }
-          .thermal-print-container {
-            display: block !important;
-            width: ${labelWidth}mm !important;
-          }
-          .thermal-sticker-page {
-            width: ${labelWidth}mm !important;
-            height: ${labelHeight}mm !important;
-            page-break-after: always !important;
-            break-after: page !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            margin: 0 !important;
-            padding: 1.5mm !important;
-            box-sizing: border-box !important;
-            display: flex !important;
-            align-items: center !important;
-            overflow: hidden !important;
-            border: none !important;
-          }
-          .a4-print-container {
-            display: none !important;
-          }
-        }
+      const stickersHtml = selectedList
+        .map((item) => {
+          const qrSrc = qrMap[item.id] || '';
+          return `
+            <div class="thermal-sticker">
+              <div class="qr-container">
+                <img src="${qrSrc}" alt="QR" class="qr-code" />
+              </div>
+              <div class="content-container">
+                <div class="brand">OMNISTOCK</div>
+                <div class="product-title">${escapeHtml(item.name)}</div>
+                <div class="sku-code">${escapeHtml(item.qr_code_data)}</div>
+                ${
+                  labelHeight >= 28
+                    ? `<div class="unit-info">${escapeHtml(
+                        labelWidth <= 42
+                          ? item.unit.toUpperCase()
+                          : `${item.unit.toUpperCase()} | MIN: ${item.min_stock_level}`
+                      )}</div>`
+                    : ''
+                }
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Thermal Sticker Labels (${labelWidth}x${labelHeight}mm)</title>
+          <style>
+            @page {
+              size: ${labelWidth}mm ${labelHeight}mm;
+              margin: 0;
+            }
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+            }
+            html, body {
+              width: ${labelWidth}mm;
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #000000;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .thermal-sticker {
+              width: ${labelWidth}mm;
+              height: ${labelHeight}mm;
+              page-break-after: always;
+              break-after: page;
+              page-break-inside: avoid;
+              break-inside: avoid;
+              display: flex;
+              align-items: center;
+              padding: 1.5mm;
+              overflow: hidden;
+              box-sizing: border-box;
+              border: none;
+            }
+            .qr-container {
+              height: 100%;
+              max-height: 90%;
+              aspect-ratio: 1/1;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            }
+            .qr-code {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              image-rendering: -webkit-optimize-contrast;
+              image-rendering: pixelated;
+            }
+            .content-container {
+              flex: 1;
+              min-width: 0;
+              height: 100%;
+              margin-left: 1.5mm;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              text-align: left;
+              line-height: 1.15;
+            }
+            .brand {
+              font-size: ${labelWidth <= 42 ? '7px' : '8px'};
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #334155;
+              letter-spacing: 0.5px;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .product-title {
+              font-size: ${labelWidth <= 42 ? '9px' : '10.5px'};
+              font-weight: 800;
+              color: #000000;
+              line-height: 1.2;
+              margin-top: 0.3mm;
+              display: -webkit-box;
+              -webkit-line-clamp: 2;
+              -webkit-box-orient: vertical;
+              overflow: hidden;
+            }
+            .sku-code {
+              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+              font-size: ${labelWidth <= 42 ? '9.5px' : '11px'};
+              font-weight: 900;
+              color: #000000;
+              letter-spacing: -0.2px;
+              margin-top: 0.6mm;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .unit-info {
+              font-size: 7.5px;
+              font-weight: 600;
+              color: #475569;
+              text-transform: uppercase;
+              margin-top: auto;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+          </style>
+        </head>
+        <body>
+          ${stickersHtml}
+        </body>
+        </html>
       `;
-      document.body.classList.add('thermal-mode');
+
+      printViaIframe(html);
     } else {
-      styleTag.innerHTML = `
-        @page {
-          size: A4 portrait;
-          margin: 8mm;
-        }
-        @media print {
-          .thermal-print-container {
-            display: none !important;
-          }
-          .a4-print-container {
-            display: grid !important;
-          }
-        }
+      const cardsHtml = selectedList
+        .map((item) => {
+          const qrSrc = qrMap[item.id] || '';
+          return `
+            <div class="a4-card">
+              <div class="a4-qr">
+                <img src="${qrSrc}" alt="QR" />
+              </div>
+              <div class="a4-info">
+                <div class="a4-brand">OmniStock Tag</div>
+                <div class="a4-title">${escapeHtml(item.name)}</div>
+                <div class="a4-sku">${escapeHtml(item.qr_code_data)}</div>
+                <div class="a4-sub">${escapeHtml(item.unit.toUpperCase())} | Min: ${item.min_stock_level}</div>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>A4 Batch QR Sheet</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm;
+            }
+            * {
+              box-sizing: border-box;
+              margin: 0;
+              padding: 0;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+              background: #fff;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            .a4-grid {
+              display: grid;
+              grid-template-columns: repeat(${labelsPerRow}, 1fr);
+              gap: 4mm;
+            }
+            .a4-card {
+              page-break-inside: avoid;
+              break-inside: avoid;
+              border: 1px dashed #94a3b8;
+              border-radius: 6px;
+              padding: 3.5mm;
+              display: flex;
+              align-items: center;
+              gap: 3mm;
+            }
+            .a4-qr {
+              width: 22mm;
+              height: 22mm;
+              flex-shrink: 0;
+            }
+            .a4-qr img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
+            .a4-info {
+              flex: 1;
+              min-width: 0;
+            }
+            .a4-brand {
+              font-size: 8px;
+              font-weight: 700;
+              color: #4f46e5;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .a4-title {
+              font-size: 11px;
+              font-weight: 700;
+              color: #0f172a;
+              line-height: 1.2;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .a4-sku {
+              font-family: monospace;
+              font-size: 11px;
+              font-weight: 700;
+              color: #1e293b;
+              margin-top: 2px;
+            }
+            .a4-sub {
+              font-size: 9px;
+              color: #64748b;
+              margin-top: 2px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="a4-grid">
+            ${cardsHtml}
+          </div>
+        </body>
+        </html>
       `;
-      document.body.classList.remove('thermal-mode');
+
+      printViaIframe(html);
     }
-
-    window.print();
-
-    // Clean up after print window closes
-    window.addEventListener(
-      'afterprint',
-      () => {
-        document.body.classList.remove('thermal-mode');
-        if (styleTag && styleTag.parentNode) {
-          styleTag.parentNode.removeChild(styleTag);
-        }
-      },
-      { once: true }
-    );
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm no-print">
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-slate-900/60">
