@@ -85,6 +85,8 @@ export const translations = {
     unit_kg: 'kg',
     unit_pallet: 'poddon',
     unit_meter: 'metr',
+    unit_ampoule: 'ampula',
+    unit_set: 'komplekt',
 
     // QR Modal
     qrModalBadge: 'Mahsulot QR Identifikatori',
@@ -246,6 +248,8 @@ export const translations = {
     unit_kg: 'кг.',
     unit_pallet: 'паллет',
     unit_meter: 'м.',
+    unit_ampoule: 'ампула',
+    unit_set: 'комплект',
 
     // QR Modal
     qrModalBadge: 'QR-идентификатор товара',
@@ -407,6 +411,8 @@ export const translations = {
     unit_kg: 'kg',
     unit_pallet: 'pallet',
     unit_meter: 'meter',
+    unit_ampoule: 'ampoule',
+    unit_set: 'set / kit',
 
     // QR Modal
     qrModalBadge: 'Product QR Identification',

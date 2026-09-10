@@ -153,6 +153,8 @@ export default function ProductsPage() {
               <option value="kg">{t.unit_kg}</option>
               <option value="pallet">{t.unit_pallet}</option>
               <option value="meter">{t.unit_meter}</option>
+              <option value="ampoule">{t.unit_ampoule}</option>
+              <option value="set">{t.unit_set}</option>
             </select>
           </div>
 
@@ -349,6 +351,8 @@ export default function ProductsPage() {
                     <option value="kg">{t.unit_kg}</option>
                     <option value="pallet">{t.unit_pallet}</option>
                     <option value="meter">{t.unit_meter}</option>
+                    <option value="ampoule">{t.unit_ampoule}</option>
+                    <option value="set">{t.unit_set}</option>
                   </select>
                 </div>
 

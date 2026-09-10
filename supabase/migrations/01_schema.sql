@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
-    unit TEXT NOT NULL CHECK (unit IN ('piece', 'kg', 'liter', 'box', 'meter', 'pallet')),
+    unit TEXT NOT NULL CHECK (unit IN ('piece', 'kg', 'liter', 'box', 'meter', 'pallet', 'ampoule', 'set')),
     min_stock_level NUMERIC(12, 2) NOT NULL DEFAULT 0 CHECK (min_stock_level >= 0),
     image_url TEXT,
     qr_code_data TEXT UNIQUE NOT NULL,

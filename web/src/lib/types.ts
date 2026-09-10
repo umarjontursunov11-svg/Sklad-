@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'warehouse_manager' | 'warehouse_staff';
 export type MovementType = 'inbound' | 'outbound' | 'transfer';
-export type ProductUnit = 'piece' | 'kg' | 'liter' | 'box' | 'meter' | 'pallet';
+export type ProductUnit = 'piece' | 'kg' | 'liter' | 'box' | 'meter' | 'pallet' | 'ampoule' | 'set';
 
 export interface Warehouse {
   id: string;
