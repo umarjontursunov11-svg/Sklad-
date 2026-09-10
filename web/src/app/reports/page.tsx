@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function ReportsPage() {
-  const { productsWithStock, warehouses, movements, lowStockItems } = useApp();
+  const { productsWithStock, warehouses, movements, lowStockItems, expiringItems, invoices } = useApp();
   const { t, language } = useI18n();
 
   const [reportType, setReportType] = useState<'inventory' | 'movements' | 'low_stock'>('inventory');
@@ -44,6 +44,10 @@ export default function ReportsPage() {
             'Unit': p.unit,
             'Min Safety Stock': p.min_stock_level,
             'Total Stock': p.total_stock,
+            'Manufacture Date': p.manufacture_date || '-',
+            'Expiry Date': p.expiry_date || '-',
+            'Days Until Expiry': p.days_until_expiry !== undefined && p.days_until_expiry !== null ? p.days_until_expiry : '-',
+            'Storage Conditions': p.storage_conditions || '-',
             'Status': p.is_low_stock ? t.reorderRequired : t.optimal,
           };
 
@@ -292,6 +296,24 @@ export default function ReportsPage() {
         (p) => new Date(p.created_at) >= startOfDay
       ).length;
 
+      // Today's sales and invoices
+      const todayInvoices = (invoices || []).filter(
+        (inv) => new Date(inv.created_at) >= startOfDay && inv.status === 'issued'
+      );
+      const salesCount = todayInvoices.length;
+      const salesTotal = todayInvoices.reduce((sum, inv) => sum + inv.total_amount, 0);
+
+      // Expiring products (<= 90 days or expired)
+      const expiringList = expiringItems.map((p) => ({
+        name: p.name,
+        code: p.qr_code_data,
+        stock: p.total_stock,
+        unit: p.unit,
+        expiry_date: p.expiry_date,
+        storage_conditions: p.storage_conditions,
+        days_left: p.days_until_expiry,
+      }));
+
       const reportData = {
         reportDate: now.toISOString().slice(0, 10),
         inboundCount: inbounds.length,
@@ -300,7 +322,10 @@ export default function ReportsPage() {
         outboundCount: outbounds.length,
         outboundTotal,
         outboundWarehouses,
+        salesCount,
+        salesTotal,
         lowStockItems: lowList,
+        expiringItems: expiringList,
         topMoved,
         newProductsCount,
       };

@@ -34,6 +34,10 @@ interface ReportData {
     total_volume: number;
     tx_count: number;
   }>;
+  sales?: {
+    total_invoices: number;
+    total_sales_amount: number;
+  };
   new_products_count: number;
   generated_at: string;
 }
@@ -67,6 +71,16 @@ function formatTelegramReport(data: ReportData): string {
     outboundDetails = '  ▫️ _Bugun chiqim harakatlari yo\'q_';
   }
 
+  // Sales section
+  let salesDetails = '';
+  if (data.sales && data.sales.total_invoices > 0) {
+    salesDetails = `
+🧾 *SAVDO VA HISOB-FAKTURALAR (SALES & INVOICES)*
+• Chiqarilgan fakturalar: *${data.sales.total_invoices} ta*
+• Jami sotuv summasi: *${data.sales.total_sales_amount.toLocaleString()} so'm*
+`;
+  }
+
   // Low stock section
   let lowStockDetails = '';
   if (data.low_stock_items && data.low_stock_items.length > 0) {
@@ -82,6 +96,27 @@ function formatTelegramReport(data: ReportData): string {
     }
   } else {
     lowStockDetails = '✅ _Barcha tovarlar xavfsizlik me\'yorida._';
+  }
+
+  // Expiring items breakdown (<= 90 days or expired)
+  let expiringDetails = '';
+  if (data.expiring_items && data.expiring_items.length > 0) {
+    expiringDetails = data.expiring_items
+      .slice(0, 8)
+      .map(
+        (p, idx) => {
+          const days = p.days_left;
+          const statusIcon = days < 0 ? '❌ [MUDDATI O\'TGAN]' : `⏳ [${days} KUN QOLDI]`;
+          const storage = p.storage_conditions ? `\n   ❄️ _Saqlash: ${p.storage_conditions}_` : '';
+          return `${idx + 1}. ${statusIcon} *${p.name}* (\`${p.qr_code_data}\`)\n   Muddati: *${p.expiry_date}* | Qoldiq: *${p.current_total_stock}* ${p.unit}${storage}`;
+        }
+      )
+      .join('\n');
+    if (data.expiring_items.length > 8) {
+      expiringDetails += `\n   _...va yana ${data.expiring_items.length - 8} ta mahsulot._`;
+    }
+  } else {
+    expiringDetails = '✅ _Muddati oz qolgan tovarlar yo\'q (barchasi > 3 oy)._';
   }
 
   // Top 3 moved products
@@ -112,9 +147,12 @@ ${inboundDetails}
 • Jami tranzaksiyalar: *${data.outbound.total_count} ta*
 • Jami jo'natilgan: *${data.outbound.total_quantity.toLocaleString()} birlik*
 ${outboundDetails}
-
+${salesDetails}
 ⚠️ *XAVFSIZLIK CHEGARASIDAN TUSHGAN TOVARLAR*
 ${lowStockDetails}
+
+⏳ *YAROQLILIK MUDDATI OZ QOLGAN TOVARLAR (≤3 OY)*
+${expiringDetails}
 
 🏆 *KUNNING ENG KO'P HARAKATLANGAN TOVARLARI (TOP-3)*
 ${topMovedDetails}

@@ -270,6 +270,8 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
                 <div class="brand">OMNISTOCK</div>
                 <div class="product-title">${escapeHtml(item.name)}</div>
                 <div class="sku-code">${escapeHtml(item.qr_code_data)}</div>
+                ${item.expiry_date ? `<div style="font-size:7px;font-weight:700;color:#000;margin-top:0.2mm;">EXP: ${escapeHtml(item.expiry_date)}</div>` : ''}
+                ${item.storage_conditions ? `<div style="font-size:6px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">COND: ${escapeHtml(item.storage_conditions)}</div>` : ''}
                 ${
                   labelHeight >= 28
                     ? `<div class="unit-info">${escapeHtml(
@@ -750,6 +752,12 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
                       >
                         {item.qr_code_data}
                       </div>
+
+                      {item.expiry_date && (
+                        <div className="text-[7.5px] font-bold text-amber-900 truncate">
+                          EXP: {item.expiry_date}
+                        </div>
+                      )}
 
                       {/* Unit / Min Threshold */}
                       {labelHeight >= 28 && (

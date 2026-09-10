@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
-import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit } from './types';
-import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS } from './mock-data';
+import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog } from './types';
+import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
 
 interface AppContextType {
   warehouses: Warehouse[];
@@ -16,7 +16,13 @@ interface AppContextType {
   productsWithStock: ProductWithStock[];
   stock: StockBalance[];
   movements: StockMovement[];
+  invoices: InvoiceWithItems[];
+  correctionRequests: CorrectionRequest[];
+  loginLogs: LoginLog[];
+  adminSessionVerified: boolean;
+  setAdminSessionVerified: (verified: boolean) => void;
   lowStockItems: ProductWithStock[];
+  expiringItems: ProductWithStock[];
   selectedProductIds: string[];
   toggleSelectProduct: (id: string) => void;
   selectAllProducts: () => void;
@@ -27,6 +33,9 @@ interface AppContextType {
     unit: ProductUnit;
     min_stock_level: number;
     image_url?: string;
+    manufacture_date?: string | null;
+    expiry_date?: string | null;
+    storage_conditions?: string | null;
     initial_stock?: { warehouse_id: string; quantity: number }[];
   }) => Promise<Product>;
   updateProduct: (id: string, updates: Partial<Product>) => void;
@@ -39,17 +48,53 @@ interface AppContextType {
     quantity: number;
     notes?: string;
   }) => { success: boolean; error?: string; movement?: StockMovement };
+  createSaleInvoice: (params: {
+    warehouseId: string;
+    customerName: string;
+    customerPhone?: string | null;
+    customerAddress?: string | null;
+    customerInn?: string | null;
+    notes?: string | null;
+    creatorName?: string | null;
+    createdBy?: string | null;
+    items: {
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+    }[];
+  }) => { success: boolean; error?: string; invoice?: InvoiceWithItems };
+  updateInvoiceCreator: (invoiceId: string, creatorName: string) => void;
+  cancelInvoice: (invoiceId: string) => { success: boolean; error?: string };
+  submitCorrectionRequest: (params: {
+    movementId: string;
+    reason: string;
+    requestedChanges: {
+      quantity?: number;
+      movement_type?: MovementType;
+      notes?: string;
+    };
+  }) => { success: boolean; error?: string; request?: CorrectionRequest };
+  reviewCorrectionRequest: (params: {
+    requestId: string;
+    status: 'approved' | 'rejected';
+    reviewNotes?: string;
+  }) => { success: boolean; error?: string };
+  verifyAdminPin: (pin: string) => boolean;
+  recordLoginLog: (eventType: LoginLog['event_type'], details?: Record<string, any>) => void;
   findProductByQR: (qrData: string) => ProductWithStock | undefined;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'wms_products_v2_clean',
-  STOCK: 'wms_stock_v2_clean',
-  MOVEMENTS: 'wms_movements_v2_clean',
-  CURRENT_USER: 'wms_current_user_v2_clean',
-  CURRENT_WH: 'wms_current_wh_v2_clean',
+  PRODUCTS: 'wms_products_v3_clean',
+  STOCK: 'wms_stock_v3_clean',
+  MOVEMENTS: 'wms_movements_v3_clean',
+  INVOICES: 'wms_invoices_v3_clean',
+  CORRECTIONS: 'wms_corrections_v3_clean',
+  LOGIN_LOGS: 'wms_login_logs_v3_clean',
+  CURRENT_USER: 'wms_current_user_v3_clean',
+  CURRENT_WH: 'wms_current_wh_v3_clean',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -61,6 +106,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [stock, setStock] = useState<StockBalance[]>(INITIAL_STOCK);
   const [movements, setMovements] = useState<StockMovement[]>(INITIAL_MOVEMENTS);
+  const [invoices, setInvoices] = useState<InvoiceWithItems[]>(INITIAL_INVOICES);
+  const [correctionRequests, setCorrectionRequests] = useState<CorrectionRequest[]>(INITIAL_CORRECTIONS);
+  const [loginLogs, setLoginLogs] = useState<LoginLog[]>(INITIAL_LOGIN_LOGS);
+  const [adminSessionVerified, setAdminSessionVerified] = useState<boolean>(false);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
 
@@ -84,6 +133,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (savedMovements) {
           const parsed = JSON.parse(savedMovements);
           if (Array.isArray(parsed)) setMovements(parsed);
+        }
+
+        const savedInvoices = localStorage.getItem(STORAGE_KEYS.INVOICES);
+        if (savedInvoices) {
+          const parsed = JSON.parse(savedInvoices);
+          if (Array.isArray(parsed)) setInvoices(parsed);
+        }
+
+        const savedCorrections = localStorage.getItem(STORAGE_KEYS.CORRECTIONS);
+        if (savedCorrections) {
+          const parsed = JSON.parse(savedCorrections);
+          if (Array.isArray(parsed)) setCorrectionRequests(parsed);
+        }
+
+        const savedLoginLogs = localStorage.getItem(STORAGE_KEYS.LOGIN_LOGS);
+        if (savedLoginLogs) {
+          const parsed = JSON.parse(savedLoginLogs);
+          if (Array.isArray(parsed)) setLoginLogs(parsed);
         }
       } catch (e) {
         console.error('Failed to load WMS data from localStorage:', e);
@@ -112,6 +179,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [movements, isHydrated]);
 
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(invoices));
+    }
+  }, [invoices, isHydrated]);
+
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.CORRECTIONS, JSON.stringify(correctionRequests));
+    }
+  }, [correctionRequests, isHydrated]);
+
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.LOGIN_LOGS, JSON.stringify(loginLogs));
+    }
+  }, [loginLogs, isHydrated]);
+
   const currentUser = useMemo(() => {
     return users.find((u) => u.id === currentUserId) || users[0];
   }, [users, currentUserId]);
@@ -121,11 +206,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return warehouses.find((w) => w.id === currentWarehouseId) || null;
   }, [warehouses, currentWarehouseId]);
 
+  const recordLoginLog = (eventType: LoginLog['event_type'], details?: Record<string, any>) => {
+    const newLog: LoginLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user_id: currentUser?.id || 'unknown',
+      user_name: currentUser?.name || 'Unknown',
+      employee_id: currentUser?.employee_id || null,
+      role: currentUser?.role || 'warehouse_staff',
+      event_type: eventType,
+      ip_address: '127.0.0.1',
+      device_type: 'web',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+      details: details || null,
+      created_at: new Date().toISOString(),
+    };
+    setLoginLogs((prev) => [newLog, ...prev]);
+  };
+
   const setCurrentUserId = (id: string) => {
+    const prevUser = currentUser;
+    const nextUser = users.find((u) => u.id === id) || users[0];
+
+    if (prevUser && prevUser.id !== id) {
+      const logoutLog: LoginLog = {
+        id: `log-${Date.now()}-out`,
+        user_id: prevUser.id,
+        user_name: prevUser.name,
+        employee_id: prevUser.employee_id || null,
+        role: prevUser.role,
+        event_type: 'logout',
+        ip_address: '127.0.0.1',
+        device_type: 'web',
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+        details: { switched_to: nextUser.name },
+        created_at: new Date().toISOString(),
+      };
+      const loginLog: LoginLog = {
+        id: `log-${Date.now() + 1}-in`,
+        user_id: nextUser.id,
+        user_name: nextUser.name,
+        employee_id: nextUser.employee_id || null,
+        role: nextUser.role,
+        event_type: 'login',
+        ip_address: '127.0.0.1',
+        device_type: 'web',
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+        details: { employee_id: nextUser.employee_id, role: nextUser.role },
+        created_at: new Date().toISOString(),
+      };
+      setLoginLogs((prev) => [loginLog, logoutLog, ...prev]);
+    }
+
+    if (nextUser.role !== 'admin') {
+      setAdminSessionVerified(false);
+    }
+
     setCurrentUserIdState(id);
-    const user = users.find((u) => u.id === id);
-    if (user?.assigned_warehouse_id) {
-      setCurrentWarehouseIdState(user.assigned_warehouse_id);
+    if (nextUser.assigned_warehouse_id) {
+      setCurrentWarehouseIdState(nextUser.assigned_warehouse_id);
     }
   };
 
@@ -148,6 +286,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const effectiveStock = currentWarehouseId ? (warehouseStockMap[currentWarehouseId] ?? 0) : total_stock;
       const is_low_stock = effectiveStock <= product.min_stock_level;
 
+      // Expiry status calculation
+      let expiry_status: 'good' | 'expiring_soon' | 'expired' | 'none' = 'none';
+      let days_until_expiry: number | null = null;
+      if (product.expiry_date) {
+        const expiryTime = new Date(product.expiry_date).getTime();
+        const now = new Date();
+        const todayTime = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const diffDays = Math.ceil((expiryTime - todayTime) / (1000 * 60 * 60 * 24));
+        days_until_expiry = diffDays;
+
+        if (diffDays < 0) {
+          expiry_status = 'expired';
+        } else if (diffDays <= 90) { // 3 months or less (<= 90 days)
+          expiry_status = 'expiring_soon';
+        } else {
+          expiry_status = 'good';
+        }
+      }
+
       const productMovements = movements
         .filter((m) => m.product_id === product.id)
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -157,6 +314,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         total_stock,
         warehouse_stock: warehouseStockMap,
         is_low_stock,
+        expiry_status,
+        days_until_expiry,
         last_movement: productMovements[0] || null,
       };
     });
@@ -164,6 +323,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const lowStockItems = useMemo(() => {
     return productsWithStock.filter((p) => p.is_low_stock);
+  }, [productsWithStock]);
+
+  const expiringItems = useMemo(() => {
+    return productsWithStock.filter(
+      (p) => p.expiry_status === 'expiring_soon' || p.expiry_status === 'expired'
+    );
   }, [productsWithStock]);
 
   const toggleSelectProduct = (id: string) => {
@@ -187,6 +352,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     unit: ProductUnit;
     min_stock_level: number;
     image_url?: string;
+    manufacture_date?: string | null;
+    expiry_date?: string | null;
+    storage_conditions?: string | null;
     initial_stock?: { warehouse_id: string; quantity: number }[];
   }): Promise<Product> => {
     const id = `prd-${Date.now().toString(36)}`;
@@ -217,6 +385,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       image_url: data.image_url || 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=400&q=80',
       qr_code_data,
       qr_code_image_url,
+      manufacture_date: data.manufacture_date || null,
+      expiry_date: data.expiry_date || null,
+      storage_conditions: data.storage_conditions || null,
       created_at: new Date().toISOString(),
     };
 
@@ -289,6 +460,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }): { success: boolean; error?: string; movement?: StockMovement } => {
     if (quantity <= 0) {
       return { success: false, error: 'Quantity must be greater than 0.' };
+    }
+
+    // Enforce role restrictions
+    if (currentUser.role === 'receiver' && movementType !== 'inbound') {
+      return {
+        success: false,
+        error: "Qabul qiluvchi (Receiver) faqat kirim (inbound) operatsiyalarini bajara oladi.",
+      };
+    }
+    if (currentUser.role === 'dispatcher' && movementType !== 'outbound') {
+      return {
+        success: false,
+        error: "Jo'natuvchi (Dispatcher) faqat chiqim (outbound) operatsiyalarini bajara oladi.",
+      };
     }
 
     const product = products.find((p) => p.id === productId);
@@ -395,13 +580,372 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       quantity,
       user_id: currentUser.id,
       user_name: currentUser.name,
+      employee_id: currentUser.employee_id || null,
+      device_type: 'web',
       timestamp: new Date().toISOString(),
       notes: notes || null,
     };
 
     setMovements((prev) => [newMovement, ...prev]);
 
+    recordLoginLog('movement_created', {
+      movement_id: newMovement.id,
+      product_name: product.name,
+      warehouse_name: sourceWh.name,
+      type: movementType,
+      quantity,
+    });
+
     return { success: true, movement: newMovement };
+  };
+
+  const createSaleInvoice = ({
+    warehouseId,
+    customerName,
+    customerPhone = null,
+    customerAddress = null,
+    customerInn = null,
+    notes = null,
+    creatorName = null,
+    createdBy = null,
+    items,
+  }: {
+    warehouseId: string;
+    customerName: string;
+    customerPhone?: string | null;
+    customerAddress?: string | null;
+    customerInn?: string | null;
+    notes?: string | null;
+    creatorName?: string | null;
+    createdBy?: string | null;
+    items: {
+      productId: string;
+      quantity: number;
+      unitPrice: number;
+    }[];
+  }): { success: boolean; error?: string; invoice?: InvoiceWithItems } => {
+    if (currentUser.role === 'receiver') {
+      return { success: false, error: "Qabul qiluvchi (Receiver) hisob-faktura chiqara olmaydi." };
+    }
+
+    if (!customerName.trim()) {
+      return { success: false, error: 'Customer name is required.' };
+    }
+    if (!items || items.length === 0) {
+      return { success: false, error: 'At least one item is required.' };
+    }
+
+    const sourceWh = warehouses.find((w) => w.id === warehouseId);
+    if (!sourceWh) {
+      return { success: false, error: 'Warehouse not found.' };
+    }
+
+    const effectiveCreatorName = creatorName?.trim() || currentUser.name;
+    const effectiveCreatedBy = createdBy || currentUser.id;
+
+    // Validate all items have sufficient stock
+    for (const item of items) {
+      if (item.quantity <= 0) {
+        return { success: false, error: 'Quantity must be greater than 0.' };
+      }
+      if (item.unitPrice < 0) {
+        return { success: false, error: 'Unit price cannot be negative.' };
+      }
+      const prod = products.find((p) => p.id === item.productId);
+      if (!prod) {
+        return { success: false, error: 'Product not found.' };
+      }
+      const currentSourceStock = stock.find(
+        (s) => s.product_id === item.productId && s.warehouse_id === warehouseId
+      );
+      const available = currentSourceStock ? currentSourceStock.quantity : 0;
+      if (available < item.quantity) {
+        return {
+          success: false,
+          error: `Insufficient stock for ${prod.name} in ${sourceWh.name}. Available: ${available} ${prod.unit}, requested: ${item.quantity} ${prod.unit}`,
+        };
+      }
+    }
+
+    const invoiceId = `inv-${Date.now()}`;
+    const year = new Date().getFullYear();
+    const invoiceNumSeq = String(invoices.length + 1).padStart(6, '0');
+    const invoiceNumber = `INV-${year}-${invoiceNumSeq}`;
+
+    let totalAmount = 0;
+    const createdMovements: StockMovement[] = [];
+    const invoiceItems: InvoiceItem[] = [];
+
+    // Deduct stock and record stock movements
+    setStock((prev) => {
+      let updated = [...prev];
+      items.forEach((item) => {
+        const prod = products.find((p) => p.id === item.productId);
+        const lineTotal = item.quantity * item.unitPrice;
+        totalAmount += lineTotal;
+
+        const movementId = `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        const movement: StockMovement = {
+          id: movementId,
+          product_id: item.productId,
+          warehouse_id: warehouseId,
+          target_warehouse_id: null,
+          movement_type: 'outbound',
+          quantity: item.quantity,
+          user_id: effectiveCreatedBy,
+          user_name: effectiveCreatorName,
+          employee_id: currentUser.employee_id || null,
+          device_type: 'web',
+          timestamp: new Date().toISOString(),
+          notes: `Sotuv (Sale): ${invoiceNumber} - Mijoz: ${customerName}`,
+        };
+        createdMovements.push(movement);
+
+        invoiceItems.push({
+          id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          invoice_id: invoiceId,
+          product_id: item.productId,
+          stock_movement_id: movementId,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          line_total: lineTotal,
+          product: prod,
+          created_at: new Date().toISOString(),
+        });
+
+        const existingIdx = updated.findIndex(
+          (s) => s.product_id === item.productId && s.warehouse_id === warehouseId
+        );
+        if (existingIdx >= 0) {
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            quantity: Math.max(0, updated[existingIdx].quantity - item.quantity),
+            updated_at: new Date().toISOString(),
+          };
+        }
+      });
+      return updated;
+    });
+
+    const newInvoice: InvoiceWithItems = {
+      id: invoiceId,
+      invoice_number: invoiceNumber,
+      customer_name: customerName.trim(),
+      customer_phone: customerPhone?.trim() || null,
+      customer_address: customerAddress?.trim() || null,
+      customer_inn: customerInn?.trim() || null,
+      warehouse_id: warehouseId,
+      warehouse_name: sourceWh.name,
+      created_by: effectiveCreatedBy,
+      creator_name: effectiveCreatorName,
+      creator_employee_id: currentUser.employee_id || null,
+      created_at: new Date().toISOString(),
+      total_amount: totalAmount,
+      status: 'issued',
+      notes: notes?.trim() || null,
+      items: invoiceItems,
+    };
+
+    setMovements((prev) => [...createdMovements, ...prev]);
+    setInvoices((prev) => [newInvoice, ...prev]);
+
+    recordLoginLog('invoice_created', {
+      invoice_id: invoiceId,
+      invoice_number: invoiceNumber,
+      customer_name: customerName,
+      total_amount: totalAmount,
+    });
+
+    return { success: true, invoice: newInvoice };
+  };
+
+  const updateInvoiceCreator = (invoiceId: string, creatorName: string) => {
+    if (!creatorName.trim()) return;
+    setInvoices((prev) =>
+      prev.map((i) =>
+        i.id === invoiceId ? { ...i, creator_name: creatorName.trim() } : i
+      )
+    );
+  };
+
+  const cancelInvoice = (invoiceId: string): { success: boolean; error?: string } => {
+    const inv = invoices.find((i) => i.id === invoiceId);
+    if (!inv) return { success: false, error: 'Invoice not found.' };
+    if (inv.status === 'cancelled') return { success: false, error: 'Invoice is already cancelled.' };
+
+    setInvoices((prev) =>
+      prev.map((i) => (i.id === invoiceId ? { ...i, status: 'cancelled' } : i))
+    );
+
+    return { success: true };
+  };
+
+  const submitCorrectionRequest = ({
+    movementId,
+    reason,
+    requestedChanges,
+  }: {
+    movementId: string;
+    reason: string;
+    requestedChanges: {
+      quantity?: number;
+      movement_type?: MovementType;
+      notes?: string;
+    };
+  }): { success: boolean; error?: string; request?: CorrectionRequest } => {
+    const targetMovement = movements.find((m) => m.id === movementId);
+    if (!targetMovement) {
+      return { success: false, error: "Operatsiya topilmadi." };
+    }
+
+    if (
+      (currentUser.role === 'receiver' || currentUser.role === 'dispatcher') &&
+      targetMovement.user_id !== currentUser.id
+    ) {
+      return {
+        success: false,
+        error: "Faqat o'zingiz kiritgan operatsiyalar bo'yicha tuzatish so'rashingiz mumkin.",
+      };
+    }
+
+    if (!reason.trim()) {
+      return { success: false, error: "Tuzatish sababi ko'rsatilishi shart." };
+    }
+
+    const newRequest: CorrectionRequest = {
+      id: `req-${Date.now()}`,
+      movement_id: movementId,
+      requested_by: currentUser.id,
+      requester_name: currentUser.name,
+      requester_employee_id: currentUser.employee_id || null,
+      reason: reason.trim(),
+      requested_changes: requestedChanges,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      movement: targetMovement,
+    };
+
+    setCorrectionRequests((prev) => [newRequest, ...prev]);
+
+    recordLoginLog('correction_requested', {
+      request_id: newRequest.id,
+      movement_id: movementId,
+      reason: reason.trim(),
+    });
+
+    return { success: true, request: newRequest };
+  };
+
+  const reviewCorrectionRequest = ({
+    requestId,
+    status,
+    reviewNotes = '',
+  }: {
+    requestId: string;
+    status: 'approved' | 'rejected';
+    reviewNotes?: string;
+  }): { success: boolean; error?: string } => {
+    if (currentUser.role !== 'admin' && currentUser.role !== 'warehouse_manager') {
+      return {
+        success: false,
+        error: "Faqat ombor mudiri yoki admin tuzatish so'rovini ko'rib chiqishi mumkin.",
+      };
+    }
+
+    const req = correctionRequests.find((r) => r.id === requestId);
+    if (!req) return { success: false, error: "So'rov topilmadi." };
+    if (req.status !== 'pending') return { success: false, error: "Bu so'rov allaqachon ko'rib chiqilgan." };
+
+    const targetMovement = movements.find((m) => m.id === req.movement_id);
+    if (!targetMovement && status === 'approved') {
+      return { success: false, error: "Bog'langan operatsiya topilmadi." };
+    }
+
+    if (status === 'approved' && targetMovement) {
+      const newQty = req.requested_changes.quantity !== undefined ? req.requested_changes.quantity : targetMovement.quantity;
+      const newType = req.requested_changes.movement_type || targetMovement.movement_type;
+
+      // Revert old movement effect and apply new one on stock
+      setStock((prev) => {
+        let updated = [...prev];
+        const stockIdx = updated.findIndex(
+          (s) => s.product_id === targetMovement.product_id && s.warehouse_id === targetMovement.warehouse_id
+        );
+
+        if (stockIdx >= 0) {
+          let currentQty = updated[stockIdx].quantity;
+          // Undo old effect
+          if (targetMovement.movement_type === 'inbound') {
+            currentQty -= targetMovement.quantity;
+          } else if (targetMovement.movement_type === 'outbound') {
+            currentQty += targetMovement.quantity;
+          }
+          // Apply new effect
+          if (newType === 'inbound') {
+            currentQty += newQty;
+          } else if (newType === 'outbound') {
+            currentQty = Math.max(0, currentQty - newQty);
+          }
+
+          updated[stockIdx] = {
+            ...updated[stockIdx],
+            quantity: Math.max(0, currentQty),
+            updated_at: new Date().toISOString(),
+          };
+        }
+        return updated;
+      });
+
+      // Update movement record
+      setMovements((prev) =>
+        prev.map((m) =>
+          m.id === targetMovement.id
+            ? {
+                ...m,
+                quantity: newQty,
+                movement_type: newType,
+                notes: `${m.notes || ''} [Tuzatildi: ${currentUser.name} (${currentUser.employee_id || 'Manager'}) - ${reviewNotes || 'Tasdiqlandi'}]`.trim(),
+              }
+            : m
+        )
+      );
+    }
+
+    const reviewedAt = new Date().toISOString();
+    setCorrectionRequests((prev) =>
+      prev.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status,
+              reviewed_by: currentUser.id,
+              reviewer_name: currentUser.name,
+              review_notes: reviewNotes || null,
+              reviewed_at: reviewedAt,
+            }
+          : r
+      )
+    );
+
+    recordLoginLog(status === 'approved' ? 'correction_approved' : 'correction_rejected', {
+      request_id: requestId,
+      movement_id: req.movement_id,
+      notes: reviewNotes,
+    });
+
+    return { success: true };
+  };
+
+  const verifyAdminPin = (pin: string): boolean => {
+    const isMatch = pin.trim() === '9876' || pin.trim() === 'admin123';
+    if (isMatch) {
+      setAdminSessionVerified(true);
+      recordLoginLog('admin_access_success', { verified_at: new Date().toISOString() });
+      return true;
+    } else {
+      recordLoginLog('admin_access_failed', { attempted_length: pin.length });
+      return false;
+    }
   };
 
   const findProductByQR = (qrData: string): ProductWithStock | undefined => {
@@ -423,7 +967,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         productsWithStock,
         stock,
         movements,
+        invoices,
+        correctionRequests,
+        loginLogs,
+        adminSessionVerified,
+        setAdminSessionVerified,
         lowStockItems,
+        expiringItems,
         selectedProductIds,
         toggleSelectProduct,
         selectAllProducts,
@@ -432,6 +982,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateProduct,
         deleteProduct,
         executeMovement,
+        createSaleInvoice,
+        updateInvoiceCreator,
+        cancelInvoice,
+        submitCorrectionRequest,
+        reviewCorrectionRequest,
+        verifyAdminPin,
+        recordLoginLog,
         findProductByQR,
       }}
     >

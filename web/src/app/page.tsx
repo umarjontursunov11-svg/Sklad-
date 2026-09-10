@@ -14,6 +14,10 @@ import {
   ArrowDownLeft,
   Warehouse,
   ExternalLink,
+  Clock,
+  AlertCircle,
+  Calendar,
+  Thermometer,
 } from 'lucide-react';
 import { QuickTransactionModal } from '../components/QuickTransactionModal';
 import { ProductWithStock } from '../lib/types';
@@ -22,6 +26,7 @@ export default function DashboardPage() {
   const {
     productsWithStock,
     lowStockItems,
+    expiringItems,
     warehouses,
     movements,
   } = useApp();
@@ -72,7 +77,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Total Products */}
         <div className="glass-panel glass-panel-hover p-5 rounded-2xl border border-white/10">
           <div className="flex items-center justify-between">
@@ -112,6 +117,20 @@ export default function DashboardPage() {
           <div className="text-3xl font-black text-amber-400 mt-3">{lowStockItems.length}</div>
           <span className="text-[11px] text-amber-400/80 mt-1 block">
             {t.kpiThresholdDesc}
+          </span>
+        </div>
+
+        {/* Expiring Stock Alerts */}
+        <div className="glass-panel glass-panel-hover p-5 rounded-2xl border border-white/10">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{t.expiringStockWarning}</span>
+            <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20">
+              <Clock className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-rose-400 mt-3">{expiringItems.length}</div>
+          <span className="text-[11px] text-rose-400/80 mt-1 block">
+            {t.filterExpiringProducts}
           </span>
         </div>
 
@@ -198,6 +217,93 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Expiring Stock Alert Panel (<= 90 days or expired) */}
+          {expiringItems.length > 0 && (
+            <div className="glass-panel p-6 rounded-2xl border border-rose-500/20 bg-rose-950/10">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                      {t.expiringStockWarning}
+                      <span className="px-2 py-0.5 text-[10px] font-black rounded-full bg-rose-500 text-white">
+                        {expiringItems.length}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">{t.filterExpiringProducts}</p>
+                  </div>
+                </div>
+                <Link
+                  href="/products"
+                  className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                >
+                  {t.products} <ExternalLink className="w-3 h-3" />
+                </Link>
+              </div>
+
+              <div className="space-y-3">
+                {expiringItems.map((item) => (
+                  <div
+                    key={`dash-exp-${item.id}`}
+                    className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 rounded-xl border transition-colors gap-3 ${
+                      item.expiry_status === 'expired'
+                        ? 'bg-rose-950/30 border-rose-500/30 hover:border-rose-500/50'
+                        : 'bg-amber-950/30 border-amber-500/30 hover:border-amber-500/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-800 flex-shrink-0">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package className="w-5 h-5 text-slate-500 m-2.5" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs text-white flex items-center gap-2">
+                          {item.name}
+                          {item.expiry_status === 'expired' ? (
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-rose-500 text-white flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {t.expiredBadge}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {item.days_until_expiry} {t.daysLeft}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                          <span>
+                            {t.expiryDate}: <span className="font-semibold text-slate-200">{item.expiry_date}</span>
+                          </span>
+                          &bull;
+                          <span>
+                            {t.totalStock}: <span className="text-emerald-400 font-bold">{item.total_stock} {item.unit}</span>
+                          </span>
+                          {item.storage_conditions && (
+                            <>
+                              &bull;
+                              <span className="text-cyan-300">❄️ {item.storage_conditions}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Link
+                      href="/products"
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-white/10 transition-all flex items-center gap-1"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 text-indigo-400" /> {t.viewQrPrint}
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Warehouse Facility Balances Overview */}
           <div className="glass-panel p-6 rounded-2xl border border-white/10">

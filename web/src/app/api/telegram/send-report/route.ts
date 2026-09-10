@@ -162,6 +162,25 @@ function formatTelegramReportMessage(data: any): string {
     lowStockDetails = '✅ _Barcha tovarlar xavfsizlik me\'yorida._';
   }
 
+  // Expiring products breakdown (<= 90 days or expired)
+  let expiringDetails = '';
+  if (data.expiringItems && data.expiringItems.length > 0) {
+    expiringDetails = data.expiringItems
+      .slice(0, 8)
+      .map((p: any, idx: number) => {
+        const days = p.days_left ?? p.daysLeft;
+        const statusIcon = days !== undefined && days < 0 ? '❌ [MUDDATI O\'TGAN]' : `⏳ [${days} KUN QOLDI]`;
+        const storage = p.storage_conditions ? `\n   ❄️ _Saqlash: ${p.storage_conditions}_` : '';
+        return `${idx + 1}. ${statusIcon} *${p.name}* (\`${p.code || p.qr_code_data || ''}\`)\n   Muddati: *${p.expiry_date || 'Noma\'lum'}* | Qoldiq: *${p.stock || p.current_total_stock || 0}* ${p.unit || ''}${storage}`;
+      })
+      .join('\n');
+    if (data.expiringItems.length > 8) {
+      expiringDetails += `\n   _...va yana ${data.expiringItems.length - 8} ta mahsulot._`;
+    }
+  } else {
+    expiringDetails = '✅ _Muddati oz qolgan tovarlar yo\'q (barchasi > 3 oy)._';
+  }
+
   // Top 3 moved products
   let topMovedDetails = '';
   const medals = ['🥇', '🥈', '🥉'];
@@ -175,6 +194,16 @@ function formatTelegramReportMessage(data: any): string {
       .join('\n');
   } else {
     topMovedDetails = '▫️ _Bugun tovar harakati yo\'q_';
+  }
+
+  // Sales breakdown
+  let salesDetails = '';
+  if (data.salesCount !== undefined || data.salesTotal !== undefined) {
+    salesDetails = `
+🧾 *SAVDO VA HISOB-FAKTURALAR (SALES & INVOICES)*
+• Chiqarilgan fakturalar: *${data.salesCount || 0} ta*
+• Jami sotuv summasi: *${(data.salesTotal || 0).toLocaleString()} so'm*
+`;
   }
 
   return `📊 *OMNISTOCK PRO — KUNLIK OMBOR HISOBOTI*
@@ -191,9 +220,12 @@ ${inboundDetails}
 • Jami tranzaksiyalar: *${data.outboundCount || 0} ta*
 • Jami jo'natilgan: *${(data.outboundTotal || 0).toLocaleString()} birlik*
 ${outboundDetails}
-
+${salesDetails}
 ⚠️ *XAVFSIZLIK CHEGARASIDAN TUSHGAN TOVARLAR*
 ${lowStockDetails}
+
+⏳ *YAROQLILIK MUDDATI OZ QOLGAN TOVARLAR (≤3 OY)*
+${expiringDetails}
 
 🏆 *KUNNING ENG KO'P HARAKATLANGAN TOVARLARI (TOP-3)*
 ${topMovedDetails}

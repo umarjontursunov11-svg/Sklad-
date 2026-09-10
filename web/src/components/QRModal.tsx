@@ -257,6 +257,8 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
             <div class="brand">OMNISTOCK</div>
             <div class="product-title">${escapeHtml(product.name)}</div>
             <div class="sku-code">${escapeHtml(product.qr_code_data)}</div>
+            ${product.expiry_date ? `<div style="font-size:7.5px;font-weight:700;color:#000;margin-top:0.3mm;">EXP: ${escapeHtml(product.expiry_date)}</div>` : ''}
+            ${product.storage_conditions ? `<div style="font-size:6.5px;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">COND: ${escapeHtml(product.storage_conditions)}</div>` : ''}
             <div class="unit-info">${escapeHtml(product.unit.toUpperCase())} | MIN: ${product.min_stock_level}</div>
           </div>
         </div>
@@ -285,6 +287,20 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
             {t.unitField}: <span className="text-slate-200 font-medium capitalize">{product.unit}</span> | {t.totalStock}:{' '}
             <span className="text-emerald-400 font-semibold">{product.total_stock}</span>
           </p>
+          {(product.expiry_date || product.storage_conditions) && (
+            <div className="flex flex-wrap items-center justify-center gap-3 text-xs mt-2 pt-2 border-t border-white/10">
+              {product.expiry_date && (
+                <span className="text-amber-300 font-bold bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  {t.expiryDate}: {product.expiry_date}
+                </span>
+              )}
+              {product.storage_conditions && (
+                <span className="text-cyan-300 font-medium bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20 truncate max-w-xs">
+                  ❄️ {product.storage_conditions}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div

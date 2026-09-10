@@ -138,22 +138,24 @@ export const WebCameraScanner: React.FC<WebCameraScannerProps> = ({ onScanSucces
           </div>
         </form>
 
-        {/* One-Click Quick Presets for Demo */}
-        <div className="mt-4 pt-3 border-t border-white/10">
-          <span className="text-[11px] text-slate-400 block mb-2">{t.quickPresets}</span>
-          <div className="flex flex-wrap gap-1.5">
-            {productsWithStock.slice(0, 4).map((p) => (
-              <button
-                key={p.id}
-                onClick={() => handleQuickSelect(p.qr_code_data)}
-                className="px-2.5 py-1 text-[11px] font-mono font-medium text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/25 border border-indigo-500/20 rounded-lg transition-colors truncate max-w-[150px]"
-                title={p.name}
-              >
-                {p.qr_code_data}
-              </button>
-            ))}
+        {/* Quick Presets (only when products exist) */}
+        {productsWithStock.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-white/10">
+            <span className="text-[11px] text-slate-400 block mb-2">{t.quickPresets}</span>
+            <div className="flex flex-wrap gap-1.5">
+              {productsWithStock.slice(0, 4).map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => handleQuickSelect(p.qr_code_data)}
+                  className="px-2.5 py-1 text-[11px] font-mono font-medium text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/25 border border-indigo-500/20 rounded-lg transition-colors truncate max-w-[150px]"
+                  title={p.name}
+                >
+                  {p.qr_code_data}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

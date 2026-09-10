@@ -16,6 +16,11 @@ import {
   Square,
   ArrowDownUp,
   Filter,
+  Calendar,
+  Clock,
+  Thermometer,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { QRModal } from '../../components/QRModal';
 import { BatchQRPrintModal } from '../../components/BatchQRPrintModal';
@@ -31,12 +36,14 @@ export default function ProductsPage() {
     toggleSelectProduct,
     selectAllProducts,
     clearSelection,
+    expiringItems,
   } = useApp();
 
   const { t } = useI18n();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUnit, setSelectedUnit] = useState<string>('all');
+  const [filterExpiryOnly, setFilterExpiryOnly] = useState<boolean>(false);
   const [activeQRProduct, setActiveQRProduct] = useState<ProductWithStock | null>(null);
   const [activeTransactionProduct, setActiveTransactionProduct] = useState<ProductWithStock | null>(null);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -48,9 +55,19 @@ export default function ProductsPage() {
   const [unit, setUnit] = useState<ProductUnit>('piece');
   const [minStockLevel, setMinStockLevel] = useState<number>(20);
   const [imageUrl, setImageUrl] = useState('');
+  const [manufactureDate, setManufactureDate] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
+  const [storageConditions, setStorageConditions] = useState('');
   const [initialWarehouseId, setInitialWarehouseId] = useState<string>(warehouses[0]?.id || '');
   const [initialQty, setInitialQty] = useState<number>(100);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const STORAGE_PRESETS = [
+    t.storagePresetRefrigerated,
+    t.storagePresetRoom,
+    t.storagePresetDryDark,
+    t.storagePresetKeepDry,
+  ];
 
   const filteredProducts = productsWithStock.filter((p) => {
     const matchesSearch =
@@ -59,7 +76,9 @@ export default function ProductsPage() {
       (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesUnit = selectedUnit === 'all' || p.unit === selectedUnit;
-    return matchesSearch && matchesUnit;
+    const matchesExpiry = !filterExpiryOnly || (p.expiry_status === 'expiring_soon' || p.expiry_status === 'expired');
+
+    return matchesSearch && matchesUnit && matchesExpiry;
   });
 
   const handleCreateProduct = async (e: React.FormEvent) => {
@@ -74,6 +93,9 @@ export default function ProductsPage() {
         unit,
         min_stock_level: Number(minStockLevel),
         image_url: imageUrl.trim() || undefined,
+        manufacture_date: manufactureDate.trim() || null,
+        expiry_date: expiryDate.trim() || null,
+        storage_conditions: storageConditions.trim() || null,
         initial_stock:
           initialQty > 0
             ? [{ warehouse_id: initialWarehouseId, quantity: Number(initialQty) }]
@@ -84,6 +106,9 @@ export default function ProductsPage() {
       setDescription('');
       setMinStockLevel(20);
       setImageUrl('');
+      setManufactureDate('');
+      setExpiryDate('');
+      setStorageConditions('');
       setInitialQty(100);
       setIsCreateModalOpen(false);
     } catch (e) {
@@ -139,6 +164,25 @@ export default function ProductsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {/* Expiring Products Filter Toggle */}
+          <button
+            type="button"
+            onClick={() => setFilterExpiryOnly(!filterExpiryOnly)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+              filterExpiryOnly
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-lg shadow-amber-500/20'
+                : 'bg-slate-900 text-slate-400 hover:text-slate-200 border-white/10'
+            }`}
+          >
+            <Clock className={`w-3.5 h-3.5 ${filterExpiryOnly ? 'text-amber-400' : 'text-slate-400'}`} />
+            <span>{t.filterExpiringProducts}</span>
+            {expiringItems.length > 0 && (
+              <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500 text-slate-950 font-black ml-0.5">
+                {expiringItems.length}
+              </span>
+            )}
+          </button>
+
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <Filter className="w-3.5 h-3.5" />
             <select
@@ -184,10 +228,10 @@ export default function ProductsPage() {
             <Package className="w-8 h-8" />
           </div>
           <h3 className="text-base font-bold text-white mb-1">
-            {searchQuery ? 'Qidiruv bo\'yicha mahsulot topilmadi' : 'Hozircha mahsulotlar mavjud emas'}
+            {searchQuery || filterExpiryOnly ? 'Qidiruv bo\'yicha mahsulot topilmadi' : 'Hozircha mahsulotlar mavjud emas'}
           </h3>
           <p className="text-xs text-slate-400 max-w-sm mb-6">
-            {searchQuery
+            {searchQuery || filterExpiryOnly
               ? 'Qidiruv parametrlarini o\'zgartirib ko\'ring.'
               : 'Birinchi mahsulotingizni qo\'shing — tizim avtomatik tarzda unikal QR kod yaratadi va chop etishga tayyorlaydi.'}
           </p>
@@ -239,6 +283,23 @@ export default function ProductsPage() {
                   </span>
                 </div>
 
+                {/* Expiry Badge */}
+                {product.expiry_status === 'expired' && (
+                  <div className="absolute top-3 left-12 flex items-center gap-1 bg-rose-600/95 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold z-10 shadow-lg shadow-rose-600/30">
+                    <AlertCircle className="w-3 h-3" /> {t.expiredBadge} ({Math.abs(product.days_until_expiry ?? 0)} {t.daysExpired})
+                  </div>
+                )}
+                {product.expiry_status === 'expiring_soon' && (
+                  <div className="absolute top-3 left-12 flex items-center gap-1 bg-amber-500/95 text-slate-950 px-2.5 py-0.5 rounded-full text-[10px] font-bold z-10 shadow-lg shadow-amber-500/30 animate-pulse">
+                    <Clock className="w-3 h-3" /> {product.days_until_expiry} {t.daysLeft}
+                  </div>
+                )}
+                {product.expiry_status === 'good' && (
+                  <div className="absolute top-3 left-12 flex items-center gap-1 bg-emerald-600/80 text-white px-2.5 py-0.5 rounded-full text-[10px] font-bold z-10">
+                    <CheckCircle2 className="w-3 h-3" /> {t.expiryStatusGood}
+                  </div>
+                )}
+
                 {product.is_low_stock && (
                   <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-amber-500/90 text-slate-950 px-2.5 py-0.5 rounded-full text-[10px] font-bold z-10">
                     <AlertTriangle className="w-3 h-3" /> {t.lowBadge}
@@ -251,6 +312,37 @@ export default function ProductsPage() {
                   <h3 className="text-base font-bold text-white line-clamp-1">{product.name}</h3>
                   <p className="text-xs text-slate-400 mt-1 line-clamp-2">{product.description}</p>
                 </div>
+
+                {/* Expiry Dates & Storage Conditions Info Box */}
+                {(product.manufacture_date || product.expiry_date || product.storage_conditions) && (
+                  <div className="mt-3 p-2.5 bg-slate-900/80 rounded-xl border border-white/5 space-y-1.5 text-[11px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300">
+                      {product.manufacture_date && (
+                        <div className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span className="text-slate-400 text-[10px]">{t.manufactureDate}:</span>
+                          <span className="font-semibold text-slate-200">{product.manufacture_date}</span>
+                        </div>
+                      )}
+                      {product.expiry_date && (
+                        <div className="flex items-center gap-1 ml-auto">
+                          <Clock className={`w-3 h-3 shrink-0 ${product.expiry_status === 'expired' ? 'text-rose-400' : product.expiry_status === 'expiring_soon' ? 'text-amber-400' : 'text-emerald-400'}`} />
+                          <span className="text-slate-400 text-[10px]">{t.expiryDate}:</span>
+                          <span className={`font-bold ${product.expiry_status === 'expired' ? 'text-rose-400' : product.expiry_status === 'expiring_soon' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            {product.expiry_date}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {product.storage_conditions && (
+                      <div className="flex items-center gap-1.5 text-slate-300 pt-1 border-t border-white/5">
+                        <Thermometer className="w-3 h-3 text-cyan-400 shrink-0" />
+                        <span className="text-slate-400 text-[10px] shrink-0">{t.storageConditions}:</span>
+                        <span className="text-slate-200 font-medium truncate">{product.storage_conditions}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-4 pt-3 border-t border-white/5 grid grid-cols-2 gap-2 text-xs">
                   <div className="p-2 bg-slate-900/60 rounded-xl">
@@ -377,6 +469,75 @@ export default function ProductsPage() {
                   onChange={(e) => setImageUrl(e.target.value)}
                   className="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
+              </div>
+
+              {/* Manufacture & Expiry Dates */}
+              <div className="p-3.5 bg-slate-900/80 rounded-xl border border-white/10 space-y-3">
+                <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+                  <Clock className="w-4 h-4" />
+                  <span>{t.expiryDate} & {t.manufactureDate}</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-400 mb-1 text-[11px] flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-500" />
+                      <span>{t.manufactureDate}</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={manufactureDate}
+                      onChange={(e) => setManufactureDate(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-white/10 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-400 mb-1 text-[11px] flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-amber-500" />
+                      <span className="text-amber-300">{t.expiryDate}</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={expiryDate}
+                      onChange={(e) => setExpiryDate(e.target.value)}
+                      className="w-full px-3 py-1.5 bg-slate-950 border border-amber-500/30 rounded-lg text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Storage Conditions */}
+                <div>
+                  <label className="block text-slate-400 mb-1 text-[11px] flex items-center gap-1">
+                    <Thermometer className="w-3 h-3 text-cyan-400" />
+                    <span>{t.storageConditions}</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Masalan: +2°C...+8°C qorong'i joyda"
+                    value={storageConditions}
+                    onChange={(e) => setStorageConditions(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-slate-950 border border-white/10 rounded-lg text-white text-xs focus:outline-none focus:border-indigo-500"
+                  />
+
+                  {/* Preset quick selection chips */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {STORAGE_PRESETS.map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setStorageConditions(preset)}
+                        className={`text-[10px] px-2 py-0.5 rounded-md border transition-all ${
+                          storageConditions === preset
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 border-white/5'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="p-3 bg-indigo-950/30 rounded-xl border border-indigo-500/20">
