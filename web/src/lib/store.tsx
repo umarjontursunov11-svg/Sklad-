@@ -95,15 +95,15 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEYS = {
-  USERS: 'wms_users_v3_clean',
-  PRODUCTS: 'wms_products_v3_clean',
-  STOCK: 'wms_stock_v3_clean',
-  MOVEMENTS: 'wms_movements_v3_clean',
-  INVOICES: 'wms_invoices_v3_clean',
-  CORRECTIONS: 'wms_corrections_v3_clean',
-  LOGIN_LOGS: 'wms_login_logs_v3_clean',
-  CURRENT_USER: 'wms_current_user_v3_clean',
-  CURRENT_WH: 'wms_current_wh_v3_clean',
+  USERS: 'wms_users_v4_market',
+  PRODUCTS: 'wms_products_v4_market',
+  STOCK: 'wms_stock_v4_market',
+  MOVEMENTS: 'wms_movements_v4_market',
+  INVOICES: 'wms_invoices_v4_market',
+  CORRECTIONS: 'wms_corrections_v4_market',
+  LOGIN_LOGS: 'wms_login_logs_v4_market',
+  CURRENT_USER: 'wms_current_user_v4_market',
+  CURRENT_WH: 'wms_current_wh_v4_market',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -126,7 +126,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        const savedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+        const savedUsers =
+          localStorage.getItem(STORAGE_KEYS.USERS) ||
+          localStorage.getItem('wms_users_v3_clean');
         if (savedUsers) {
           const parsed = JSON.parse(savedUsers);
           if (Array.isArray(parsed) && parsed.length > 0) {
