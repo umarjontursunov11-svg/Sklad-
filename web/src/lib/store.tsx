@@ -1109,7 +1109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const verifyAdminPin = (pin: string): boolean => {
-    const isMatch = pin.trim() === '9876' || pin.trim() === 'admin123';
+    const isMatch = pin.trim() === 'U20020604u';
     if (isMatch) {
       setAdminSessionVerified(true);
       recordLoginLog('admin_access_success', { verified_at: new Date().toISOString() });

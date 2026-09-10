@@ -65,7 +65,7 @@ export default function AdminPage() {
     );
   }
 
-  // If admin session is not verified, require Master PIN (9876)
+  // If admin session is not verified, require Admin Password (U20020604u)
   if (!adminSessionVerified) {
     const handleVerify = (e: React.FormEvent) => {
       e.preventDefault();
@@ -90,19 +90,18 @@ export default function AdminPage() {
           </h2>
           <p className="text-xs text-slate-400 mb-6 leading-relaxed">
             Administrator: <strong>{currentUser.full_name || currentUser.name}</strong> ({currentUser.employee_id}).
-            Konsolga kirish uchun Master PIN kodni kiriting (Standart: <span className="text-indigo-400 font-mono font-bold">9876</span>).
+            Konsolga kirish uchun maxfiy parolni kiriting.
           </p>
 
           <form onSubmit={handleVerify} className="space-y-4">
             <div className="relative">
               <input
                 type="password"
-                maxLength={10}
                 autoFocus
-                placeholder="Master PIN (9876)"
+                placeholder="Admin parolini kiriting..."
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
-                className="w-full px-4 py-3 text-center tracking-widest text-lg font-mono font-bold bg-slate-900/90 border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                className="w-full px-4 py-3 text-center text-sm font-semibold bg-slate-900/90 border border-white/10 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-colors"
               />
             </div>
 
@@ -120,20 +119,6 @@ export default function AdminPage() {
               {t.verifyPinBtn || 'Kodni Tasdiqlash'}
             </button>
           </form>
-
-          {/* Quick preset PIN button for convenience */}
-          <div className="mt-6 pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={() => {
-                setPinInput('9876');
-                verifyAdminPin('9876');
-              }}
-              className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold"
-            >
-              Tezkor kirish (9876 ni kiritish)
-            </button>
-          </div>
         </div>
       </div>
     );
@@ -151,7 +136,6 @@ export default function AdminPage() {
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
               XAVFSIZ REJIM AKTIV
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">PIN: 9876</span>
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
             <KeyRound className="w-7 h-7 text-rose-400" />
