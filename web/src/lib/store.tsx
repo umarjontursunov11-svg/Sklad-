@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
-import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog } from './types';
+import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog, UserRole } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
 
 interface AppContextType {
@@ -12,6 +12,13 @@ interface AppContextType {
   users: UserProfile[];
   currentUser: UserProfile;
   setCurrentUserId: (id: string) => void;
+  registerStaffUser: (data: {
+    full_name: string;
+    email: string;
+    phone?: string;
+    role: UserRole;
+    assigned_warehouse_id?: string | null;
+  }) => { success: boolean; error?: string; user?: UserProfile };
   products: Product[];
   productsWithStock: ProductWithStock[];
   stock: StockBalance[];
@@ -87,6 +94,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEYS = {
+  USERS: 'wms_users_v3_clean',
   PRODUCTS: 'wms_products_v3_clean',
   STOCK: 'wms_stock_v3_clean',
   MOVEMENTS: 'wms_movements_v3_clean',
@@ -99,7 +107,7 @@ const STORAGE_KEYS = {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [warehouses] = useState<Warehouse[]>(INITIAL_WAREHOUSES);
-  const [users] = useState<UserProfile[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
   const [currentUserId, setCurrentUserIdState] = useState<string>('usr-admin');
   const [currentWarehouseId, setCurrentWarehouseIdState] = useState<string | null>(null);
 
@@ -117,6 +125,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
+        const savedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+        if (savedUsers) {
+          const parsed = JSON.parse(savedUsers);
+          if (Array.isArray(parsed) && parsed.length > 0) setUsers(parsed);
+        }
+
         const savedProducts = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
         if (savedProducts) {
           const parsed = JSON.parse(savedProducts);
@@ -161,6 +175,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Sync to localStorage ONLY after hydration is complete (prevent overwriting saved data on initial render)
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    }
+  }, [users, isHydrated]);
+
   useEffect(() => {
     if (isHydrated && typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
@@ -269,6 +289,89 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setCurrentWarehouseId = (id: string | null) => {
     setCurrentWarehouseIdState(id);
+  };
+
+  const registerStaffUser = (data: {
+    full_name: string;
+    email: string;
+    phone?: string;
+    role: UserRole;
+    assigned_warehouse_id?: string | null;
+  }): { success: boolean; error?: string; user?: UserProfile } => {
+    const trimmedName = data.full_name.trim();
+    const trimmedEmail = data.email.trim().toLowerCase();
+
+    if (!trimmedName) {
+      return { success: false, error: "Xodimning to'liq F.I.O kiritilishi shart!" };
+    }
+    if (!trimmedEmail) {
+      return { success: false, error: 'Elektron pochta manzili kiritilishi shart!' };
+    }
+
+    const exists = users.some((u) => u.email.toLowerCase() === trimmedEmail);
+    if (exists) {
+      return { success: false, error: 'Ushbu elektron pochta bilan allaqachon akkaunt mavjud!' };
+    }
+
+    // Generate unique employee ID based on role
+    const prefix =
+      data.role === 'receiver'
+        ? 'EMP-2'
+        : data.role === 'dispatcher'
+        ? 'EMP-3'
+        : data.role === 'warehouse_manager'
+        ? 'EMP-1'
+        : 'EMP-5';
+
+    const countWithPrefix = users.filter((u) => u.employee_id.startsWith(prefix)).length + 1;
+    const employee_id = `${prefix}${String(countWithPrefix).padStart(3, '0')}`;
+
+    const newId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const roleId =
+      data.role === 'admin'
+        ? '11111111-1111-1111-1111-111111111111'
+        : data.role === 'warehouse_manager'
+        ? '22222222-2222-2222-2222-222222222222'
+        : data.role === 'receiver'
+        ? '44444444-4444-4444-4444-444444444444'
+        : data.role === 'dispatcher'
+        ? '55555555-5555-5555-5555-555555555555'
+        : '33333333-3333-3333-3333-333333333333';
+
+    const newUser: UserProfile = {
+      id: newId,
+      name: trimmedName,
+      full_name: trimmedName,
+      email: trimmedEmail,
+      phone: data.phone?.trim() || null,
+      employee_id,
+      role: data.role,
+      role_id: roleId,
+      assigned_warehouse_id: data.assigned_warehouse_id || null,
+    };
+
+    setUsers((prev) => [...prev, newUser]);
+    setCurrentUserIdState(newId);
+    if (newUser.assigned_warehouse_id) {
+      setCurrentWarehouseIdState(newUser.assigned_warehouse_id);
+    }
+
+    const regLog: LoginLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user_id: newId,
+      user_name: trimmedName,
+      employee_id,
+      role: data.role,
+      event_type: 'login',
+      ip_address: '127.0.0.1',
+      device_type: 'web',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+      details: { action: 'staff_self_registered', warehouse_id: data.assigned_warehouse_id },
+      created_at: new Date().toISOString(),
+    };
+    setLoginLogs((prev) => [regLog, ...prev]);
+
+    return { success: true, user: newUser };
   };
 
   // Compute products with calculated stock per warehouse and total
@@ -963,6 +1066,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         users,
         currentUser,
         setCurrentUserId,
+        registerStaffUser,
         products,
         productsWithStock,
         stock,

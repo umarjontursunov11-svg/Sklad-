@@ -15,7 +15,9 @@ import {
   Clock,
   AlertCircle,
   Calendar,
+  UserPlus,
 } from 'lucide-react';
+import { StaffRegisterModal } from './StaffRegisterModal';
 
 interface NavbarProps {
   onOpenScanner: () => void;
@@ -38,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [activeNotifTab, setActiveNotifTab] = useState<'all' | 'low' | 'expiring'>('all');
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -362,10 +365,30 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
                   </button>
                 ))}
               </div>
+
+              {/* Staff Self-Registration Trigger */}
+              <div className="pt-2.5 mt-2.5 border-t border-white/10">
+                <button
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowRegisterModal(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.01]"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ Yangi xodim hisobini ochish</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Staff Self-Registration Modal */}
+      <StaffRegisterModal
+        isOpen={showRegisterModal}
+        onClose={() => setShowRegisterModal(false)}
+      />
     </header>
   );
 };

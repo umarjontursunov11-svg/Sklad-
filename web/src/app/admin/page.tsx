@@ -16,10 +16,11 @@ import {
   Building2,
   CheckCircle2,
   RotateCcw,
-  Clock,
   Sparkles,
   Search,
+  UserPlus,
 } from 'lucide-react';
+import { StaffRegisterModal } from '../../components/StaffRegisterModal';
 
 export default function AdminPage() {
   const {
@@ -35,6 +36,7 @@ export default function AdminPage() {
 
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
 
   // If user is not admin, deny access immediately
   if (currentUser.role !== 'admin') {
@@ -181,12 +183,26 @@ export default function AdminPage() {
 
       {/* Staff Accounts Management Section */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <Users className="w-5 h-5 text-indigo-400" />
-            <span>Xodimlar Ro'yxati & Huquqlar Matritsasi</span>
-          </h2>
-          <span className="text-xs text-slate-400">{users.length} ta ro'yxatdan o'tgan hisob</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-400" />
+              <span>Xodimlar Ro'yxati & Huquqlar Matritsasi</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Ombor xodimlari o'zlari ro'yxatdan o'tishlari yoki administrator tomonidan qo'shilishi mumkin
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400">{users.length} ta ro'yxatdan o'tgan hisob</span>
+            <button
+              onClick={() => setShowRegisterModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all hover:scale-[1.02]"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Yangi xodim qo'shish</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto glass-panel rounded-2xl border border-white/10 shadow-xl">
@@ -274,6 +290,12 @@ export default function AdminPage() {
           </table>
         </div>
       </div>
+
+      {/* Staff Self-Registration Modal */}
+      <StaffRegisterModal
+        isOpen={showRegisterModal}
+        onClose={() => setShowRegisterModal(false)}
+      />
     </div>
   );
 }
