@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.45.6",
     "canvas-confetti": "^1.9.3",
     "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "html5-qrcode": "^2.3.8",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.453.0",
