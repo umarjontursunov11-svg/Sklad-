@@ -558,3 +558,186 @@ VALUES
     ('90000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'inbound', 200, now() - INTERVAL '5 days', 'Bulk delivery palletized'),
     ('90000000-0000-0000-0000-000000000004', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'inbound', 80, now() - INTERVAL '1 day', 'Restock shipment received'),
     ('90000000-0000-0000-0000-000000000004', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'outbound', 20, now() - INTERVAL '4 hours', 'Issued to packaging shift team');
+
+-- ==============================================================================
+-- 6. TELEGRAM BOT REPORTING, AUDIT LOGS & REPORT ENGINE
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.report_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_type TEXT NOT NULL CHECK (report_type IN ('daily_summary', 'low_stock_alert', 'manual_trigger')),
+    status TEXT NOT NULL CHECK (status IN ('success', 'failed', 'retrying', 'pending')),
+    payload JSONB,
+    telegram_message_id BIGINT,
+    error_message TEXT,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_logs_created_at ON public.report_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_report_logs_status ON public.report_logs (status);
+
+ALTER TABLE public.report_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Staff and Admins can view report logs" ON public.report_logs;
+CREATE POLICY "Staff and Admins can view report logs"
+    ON public.report_logs
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.users u
+            JOIN public.roles r ON u.role_id = r.id
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+        )
+    );
+
+DROP POLICY IF EXISTS "Service role can manage report logs" ON public.report_logs;
+CREATE POLICY "Service role can manage report logs"
+    ON public.report_logs
+    FOR ALL
+    TO service_role
+    USING (true)
+    WITH CHECK (true);
+
+CREATE OR REPLACE FUNCTION public.get_daily_report_data(p_date DATE DEFAULT CURRENT_DATE)
+RETURNS JSONB AS $$
+DECLARE
+    v_start_timestamp TIMESTAMPTZ;
+    v_end_timestamp TIMESTAMPTZ;
+    v_inbound_total_count INT := 0;
+    v_inbound_total_qty NUMERIC := 0;
+    v_inbound_by_warehouse JSONB;
+    v_outbound_total_count INT := 0;
+    v_outbound_total_qty NUMERIC := 0;
+    v_outbound_by_warehouse JSONB;
+    v_low_stock_items JSONB;
+    v_top_moved_products JSONB;
+    v_new_products_count INT := 0;
+    v_result JSONB;
+BEGIN
+    v_start_timestamp := p_date::timestamptz;
+    v_end_timestamp := (p_date + INTERVAL '1 day')::timestamptz;
+
+    -- Inbound breakdown
+    SELECT 
+        COALESCE(COUNT(*), 0),
+        COALESCE(SUM(quantity), 0)
+    INTO 
+        v_inbound_total_count,
+        v_inbound_total_qty
+    FROM public.stock_movements
+    WHERE movement_type = 'inbound'
+      AND created_at >= v_start_timestamp
+      AND created_at < v_end_timestamp;
+
+    SELECT COALESCE(jsonb_agg(wh_row), '[]'::jsonb)
+    INTO v_inbound_by_warehouse
+    FROM (
+        SELECT 
+            w.name AS warehouse_name,
+            COUNT(sm.id) AS tx_count,
+            COALESCE(SUM(sm.quantity), 0) AS total_qty
+        FROM public.stock_movements sm
+        JOIN public.warehouses w ON sm.warehouse_id = w.id
+        WHERE sm.movement_type = 'inbound'
+          AND sm.created_at >= v_start_timestamp
+          AND sm.created_at < v_end_timestamp
+        GROUP BY w.name
+        ORDER BY total_qty DESC
+    ) wh_row;
+
+    -- Outbound breakdown
+    SELECT 
+        COALESCE(COUNT(*), 0),
+        COALESCE(SUM(quantity), 0)
+    INTO 
+        v_outbound_total_count,
+        v_outbound_total_qty
+    FROM public.stock_movements
+    WHERE movement_type = 'outbound'
+      AND created_at >= v_start_timestamp
+      AND created_at < v_end_timestamp;
+
+    SELECT COALESCE(jsonb_agg(wh_row), '[]'::jsonb)
+    INTO v_outbound_by_warehouse
+    FROM (
+        SELECT 
+            w.name AS warehouse_name,
+            COUNT(sm.id) AS tx_count,
+            COALESCE(SUM(sm.quantity), 0) AS total_qty
+        FROM public.stock_movements sm
+        JOIN public.warehouses w ON sm.warehouse_id = w.id
+        WHERE sm.movement_type = 'outbound'
+          AND sm.created_at >= v_start_timestamp
+          AND sm.created_at < v_end_timestamp
+        GROUP BY w.name
+        ORDER BY total_qty DESC
+    ) wh_row;
+
+    -- Low-stock items list
+    SELECT COALESCE(jsonb_agg(low_row), '[]'::jsonb)
+    INTO v_low_stock_items
+    FROM (
+        SELECT 
+            p.id,
+            p.name,
+            p.qr_code_data,
+            p.unit,
+            p.min_stock_level,
+            COALESCE(SUM(s.quantity), 0) AS current_total_stock
+        FROM public.products p
+        LEFT JOIN public.stock s ON p.id = s.product_id
+        GROUP BY p.id, p.name, p.qr_code_data, p.unit, p.min_stock_level
+        HAVING COALESCE(SUM(s.quantity), 0) <= p.min_stock_level
+        ORDER BY (COALESCE(SUM(s.quantity), 0) - p.min_stock_level) ASC
+    ) low_row;
+
+    -- Top 3 most-moved products
+    SELECT COALESCE(jsonb_agg(top_row), '[]'::jsonb)
+    INTO v_top_moved_products
+    FROM (
+        SELECT 
+            p.name AS product_name,
+            p.qr_code_data,
+            p.unit,
+            COALESCE(SUM(sm.quantity), 0) AS total_volume,
+            COUNT(sm.id) AS tx_count
+        FROM public.stock_movements sm
+        JOIN public.products p ON sm.product_id = p.id
+        WHERE sm.created_at >= v_start_timestamp
+          AND sm.created_at < v_end_timestamp
+        GROUP BY p.id, p.name, p.qr_code_data, p.unit
+        ORDER BY total_volume DESC
+        LIMIT 3
+    ) top_row;
+
+    -- New products count
+    SELECT COUNT(*)
+    INTO v_new_products_count
+    FROM public.products
+    WHERE created_at >= v_start_timestamp
+      AND created_at < v_end_timestamp;
+
+    v_result := jsonb_build_object(
+        'report_date', p_date,
+        'inbound', jsonb_build_object(
+            'total_count', v_inbound_total_count,
+            'total_quantity', v_inbound_total_qty,
+            'by_warehouse', v_inbound_by_warehouse
+        ),
+        'outbound', jsonb_build_object(
+            'total_count', v_outbound_total_count,
+            'total_quantity', v_outbound_total_qty,
+            'by_warehouse', v_outbound_by_warehouse
+        ),
+        'low_stock_items', v_low_stock_items,
+        'top_moved_products', v_top_moved_products,
+        'new_products_count', v_new_products_count,
+        'generated_at', timezone('utc'::text, now())
+    );
+
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+

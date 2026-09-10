@@ -10,6 +10,9 @@ import {
   Download,
   FileText,
   AlertTriangle,
+  Send,
+  Loader2,
+  Check,
 } from 'lucide-react';
 
 export default function ReportsPage() {
@@ -18,6 +21,11 @@ export default function ReportsPage() {
 
   const [reportType, setReportType] = useState<'inventory' | 'movements' | 'low_stock'>('inventory');
   const [isExporting, setIsExporting] = useState(false);
+  const [isSendingTelegram, setIsSendingTelegram] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<{
+    type: 'success' | 'error' | null;
+    message: string;
+  }>({ type: null, message: '' });
 
   // 1. Export to Excel (.xlsx)
   const handleExportExcel = () => {
@@ -216,6 +224,117 @@ export default function ReportsPage() {
     }
   };
 
+  // 3. Send Manual Telegram Report
+  const handleSendTelegramReport = async () => {
+    setIsSendingTelegram(true);
+    setTelegramStatus({ type: null, message: '' });
+
+    try {
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      const todayMovements = movements.filter((m) => new Date(m.timestamp) >= startOfDay);
+
+      // Inbound
+      const inbounds = todayMovements.filter((m) => m.movement_type === 'inbound');
+      const inboundTotal = inbounds.reduce((sum, m) => sum + m.quantity, 0);
+      const inboundWarehouses: { [name: string]: number } = {};
+      inbounds.forEach((m) => {
+        const wh = warehouses.find((w) => w.id === m.warehouse_id);
+        const name = wh?.name || 'Main Warehouse';
+        inboundWarehouses[name] = (inboundWarehouses[name] || 0) + m.quantity;
+      });
+
+      // Outbound
+      const outbounds = todayMovements.filter((m) => m.movement_type === 'outbound');
+      const outboundTotal = outbounds.reduce((sum, m) => sum + m.quantity, 0);
+      const outboundWarehouses: { [name: string]: number } = {};
+      outbounds.forEach((m) => {
+        const wh = warehouses.find((w) => w.id === m.warehouse_id);
+        const name = wh?.name || 'Main Warehouse';
+        outboundWarehouses[name] = (outboundWarehouses[name] || 0) + m.quantity;
+      });
+
+      // Low stock items
+      const lowList = lowStockItems.map((p) => ({
+        name: p.name,
+        code: p.qr_code_data,
+        stock: p.total_stock,
+        min: p.min_stock_level,
+        unit: p.unit,
+      }));
+
+      // Top 3 moved products
+      const volumeMap: { [id: string]: { volume: number; count: number } } = {};
+      todayMovements.forEach((m) => {
+        if (!volumeMap[m.product_id]) {
+          volumeMap[m.product_id] = { volume: 0, count: 0 };
+        }
+        volumeMap[m.product_id].volume += m.quantity;
+        volumeMap[m.product_id].count += 1;
+      });
+
+      const topMoved = Object.entries(volumeMap)
+        .sort((a, b) => b[1].volume - a[1].volume)
+        .slice(0, 3)
+        .map(([id, stats]) => {
+          const prod = productsWithStock.find((p) => p.id === id);
+          return {
+            name: prod?.name || 'Product',
+            volume: stats.volume,
+            count: stats.count,
+            unit: prod?.unit || 'birlik',
+          };
+        });
+
+      // New products added today
+      const newProductsCount = productsWithStock.filter(
+        (p) => new Date(p.created_at) >= startOfDay
+      ).length;
+
+      const reportData = {
+        reportDate: now.toISOString().slice(0, 10),
+        inboundCount: inbounds.length,
+        inboundTotal,
+        inboundWarehouses,
+        outboundCount: outbounds.length,
+        outboundTotal,
+        outboundWarehouses,
+        lowStockItems: lowList,
+        topMoved,
+        newProductsCount,
+      };
+
+      const res = await fetch('/api/telegram/send-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportData }),
+      });
+
+      const result = await res.json();
+
+      if (res.ok && result.success) {
+        setTelegramStatus({
+          type: 'success',
+          message: t.reportSentSuccess,
+        });
+        setTimeout(() => setTelegramStatus({ type: null, message: '' }), 6000);
+      } else {
+        setTelegramStatus({
+          type: 'error',
+          message: result.error || t.reportSendFailed,
+        });
+      }
+    } catch (err: any) {
+      setTelegramStatus({
+        type: 'error',
+        message: err.message || t.reportSendFailed,
+      });
+    } finally {
+      setIsSendingTelegram(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header */}
@@ -229,8 +348,36 @@ export default function ReportsPage() {
           </p>
         </div>
 
-        {/* Action Export Buttons */}
-        <div className="flex items-center gap-2.5">
+        {/* Action Export & Telegram Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={handleSendTelegramReport}
+            disabled={isSendingTelegram}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold text-white rounded-xl shadow-lg transition-all ${
+              telegramStatus.type === 'success'
+                ? 'bg-emerald-600 shadow-emerald-600/30'
+                : telegramStatus.type === 'error'
+                ? 'bg-rose-600 shadow-rose-600/30'
+                : 'bg-sky-600 hover:bg-sky-500 shadow-sky-600/30'
+            } disabled:opacity-50`}
+            title={t.sendReportNow}
+          >
+            {isSendingTelegram ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : telegramStatus.type === 'success' ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            <span>
+              {isSendingTelegram
+                ? t.sendingTelegramReport
+                : telegramStatus.type === 'success'
+                ? 'Yuborildi!'
+                : t.sendReportNow}
+            </span>
+          </button>
+
           <button
             onClick={handleExportExcel}
             disabled={isExporting}
@@ -248,6 +395,32 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
+
+      {/* Telegram Status Toast Banner */}
+      {telegramStatus.message && (
+        <div
+          className={`p-3 rounded-xl border flex items-center justify-between text-xs font-semibold animate-fadeIn ${
+            telegramStatus.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+              : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {telegramStatus.type === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+            )}
+            <span>{telegramStatus.message}</span>
+          </div>
+          <button
+            onClick={() => setTelegramStatus({ type: null, message: '' })}
+            className="text-slate-400 hover:text-white"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Report Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 glass-panel rounded-2xl border border-white/10">

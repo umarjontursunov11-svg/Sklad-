@@ -158,6 +158,12 @@ export const translations = {
     criticalLow: 'KRITIK KAM',
     optimal: 'ME\'YORDA',
     reorderRequired: 'BUYURTMA KERAK',
+    sendReportNow: 'Telegram Hisobotini Yuborish',
+    sendingTelegramReport: 'Telegramga yuborilmoqda...',
+    reportSentSuccess: 'Kunlik hisobot Telegram guruhiga muvaffaqiyatli yuborildi!',
+    reportSendFailed: 'Telegramga yuborishda xatolik yuz berdi',
+    telegramConfigMissing: 'Telegram Bot Token yoki Chat ID sozlanmagan (.env faylini tekshiring)',
+    telegramDailyReportTitle: 'Kunlik Telegram Hisoboti',
   },
 
   ru: {
@@ -313,6 +319,12 @@ export const translations = {
     criticalLow: 'КРИТИЧЕСКИ МАЛО',
     optimal: 'В НОРМЕ',
     reorderRequired: 'ТРЕБУЕТСЯ ЗАКАЗ',
+    sendReportNow: 'Отправить отчет в Telegram',
+    sendingTelegramReport: 'Отправка в Telegram...',
+    reportSentSuccess: 'Ежедневный отчет успешно отправлен в Telegram группу!',
+    reportSendFailed: 'Ошибка при отправке в Telegram',
+    telegramConfigMissing: 'Не настроен Telegram Bot Token или Chat ID (проверьте .env)',
+    telegramDailyReportTitle: 'Ежедневный отчет в Telegram',
   },
 
   en: {
@@ -468,6 +480,12 @@ export const translations = {
     criticalLow: 'CRITICAL LOW',
     optimal: 'OPTIMAL',
     reorderRequired: 'REORDER REQUIRED',
+    sendReportNow: 'Send Report to Telegram',
+    sendingTelegramReport: 'Sending to Telegram...',
+    reportSentSuccess: 'Daily report successfully sent to Telegram group!',
+    reportSendFailed: 'Failed to send report to Telegram',
+    telegramConfigMissing: 'Telegram Bot Token or Chat ID not configured (check .env)',
+    telegramDailyReportTitle: 'Daily Telegram Report',
   },
 };
 

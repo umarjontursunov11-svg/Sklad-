@@ -97,6 +97,43 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
+## 🤖 Telegram Bot Reporting & Real-Time Alerts
+
+OmniStock PRO includes automated daily summary reporting and instant low-stock notifications sent directly to a designated Telegram group.
+
+### 1. Bot Setup
+1. Open [@BotFather](https://t.me/BotFather) on Telegram and run `/newbot` to create your bot. Copy the **Bot Token** (`TELEGRAM_BOT_TOKEN`).
+2. Create a Telegram group for warehouse managers/staff and add your bot to the group.
+3. Obtain the group's **Chat ID** (`TELEGRAM_CHAT_ID`) (usually starts with `-100`).
+4. Add these credentials to your `.env` or `web/.env.local`:
+   ```env
+   TELEGRAM_BOT_TOKEN=123456789:ABCDefGhIjKlMnOpQrStUvWxYz
+   TELEGRAM_CHAT_ID=-1001234567890
+   ```
+
+### 2. Automated Daily Report (20:00)
+- **Supabase Edge Function**: `supabase/functions/send-daily-report/index.ts`
+- **Schedule**: Runs automatically at **20:00** daily via `pg_cron` (or Supabase Scheduled Functions).
+- **Report Content**:
+  - Inbound operations count & received quantity broken down by warehouse.
+  - Outbound operations count & shipped quantity broken down by warehouse.
+  - Low-stock alert section (products below safety threshold).
+  - Top 3 most-moved products of the day by volume.
+  - Number of new products added.
+  - Automatic retry after 30 seconds if Telegram API temporarily fails.
+
+### 3. Real-Time Low Stock Alerts
+- **Supabase Edge Function**: `supabase/functions/send-low-stock-alert/index.ts`
+- Dispatches an immediate high-priority warning message to the Telegram group whenever any transaction drops product inventory below its `min_stock_level`.
+
+### 4. Manual Report Trigger (On-Demand)
+- In the Web Admin Panel (**Reports & Analytics** / `/reports`), click the **«Telegram Hisobotini Yuborish»** button to instantly generate and dispatch the current day's live activity report to the group.
+
+### 5. Audit & Error Logging
+- All dispatch attempts (success, failure, retry status, message ID, timestamp) are recorded in the `report_logs` PostgreSQL table for full compliance and debugging.
+
+---
+
 ## 📱 Mobile Application (Flutter)
 The mobile application is designed to target both Android and iOS from a single Dart codebase located in `mobile/`, utilizing `supabase_flutter` for real-time synchronization and `mobile_scanner` for hardware camera QR code scanning.
 
