@@ -58,56 +58,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUserId, setCurrentUserIdState] = useState<string>('usr-admin');
   const [currentWarehouseId, setCurrentWarehouseIdState] = useState<string | null>(null);
 
-  const [products, setProducts] = useState<Product[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
-    }
-    return INITIAL_PRODUCTS;
-  });
-
-  const [stock, setStock] = useState<StockBalance[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEYS.STOCK);
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
-    }
-    return INITIAL_STOCK;
-  });
-
-  const [movements, setMovements] = useState<StockMovement[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEYS.MOVEMENTS);
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
-    }
-    return INITIAL_MOVEMENTS;
-  });
-
+  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [stock, setStock] = useState<StockBalance[]>(INITIAL_STOCK);
+  const [movements, setMovements] = useState<StockMovement[]>(INITIAL_MOVEMENTS);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [isHydrated, setIsHydrated] = useState<boolean>(false);
 
-  // Sync to localStorage
+  // Load from localStorage only after initial client mount to prevent SSR hydration mismatch
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      try {
+        const savedProducts = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+        if (savedProducts) {
+          const parsed = JSON.parse(savedProducts);
+          if (Array.isArray(parsed)) setProducts(parsed);
+        }
+
+        const savedStock = localStorage.getItem(STORAGE_KEYS.STOCK);
+        if (savedStock) {
+          const parsed = JSON.parse(savedStock);
+          if (Array.isArray(parsed)) setStock(parsed);
+        }
+
+        const savedMovements = localStorage.getItem(STORAGE_KEYS.MOVEMENTS);
+        if (savedMovements) {
+          const parsed = JSON.parse(savedMovements);
+          if (Array.isArray(parsed)) setMovements(parsed);
+        }
+      } catch (e) {
+        console.error('Failed to load WMS data from localStorage:', e);
+      } finally {
+        setIsHydrated(true);
+      }
+    }
+  }, []);
+
+  // Sync to localStorage ONLY after hydration is complete (prevent overwriting saved data on initial render)
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
     }
-  }, [products]);
+  }, [products, isHydrated]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (isHydrated && typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.STOCK, JSON.stringify(stock));
     }
-  }, [stock]);
+  }, [stock, isHydrated]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (isHydrated && typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(movements));
     }
-  }, [movements]);
+  }, [movements, isHydrated]);
 
   const currentUser = useMemo(() => {
     return users.find((u) => u.id === currentUserId) || users[0];

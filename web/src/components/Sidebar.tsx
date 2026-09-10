@@ -19,6 +19,11 @@ export const Sidebar: React.FC = () => {
   const pathname = usePathname();
   const { lowStockItems } = useApp();
   const { t } = useI18n();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const navItems = [
     { label: t.dashboard, href: '/', icon: LayoutDashboard },
@@ -27,7 +32,7 @@ export const Sidebar: React.FC = () => {
       label: t.inventory,
       href: '/inventory',
       icon: Boxes,
-      badge: lowStockItems.length > 0 ? `${lowStockItems.length} ${t.lowBadge}` : undefined,
+      badge: mounted && lowStockItems.length > 0 ? `${lowStockItems.length} ${t.lowBadge}` : undefined,
       badgeColor: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
     },
     { label: t.stockInOut, href: '/transactions', icon: ArrowDownUp },

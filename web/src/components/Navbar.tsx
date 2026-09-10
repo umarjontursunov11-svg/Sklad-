@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../lib/store';
 import { useI18n, Language } from '../lib/i18n';
 import {
@@ -34,6 +34,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const languages: { code: Language; label: string; flag: string }[] = [
     { code: 'uz', label: "O'zbekcha", flag: '🇺🇿' },
@@ -138,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
             title={t.lowStockAlerts}
           >
             <Bell className="w-4 h-4" />
-            {lowStockItems.length > 0 && (
+            {mounted && lowStockItems.length > 0 && (
               <span className="absolute -top-1 -right-1 flex items-center justify-center w-4 h-4 text-[10px] font-black text-white bg-rose-500 rounded-full animate-pulse">
                 {lowStockItems.length}
               </span>
