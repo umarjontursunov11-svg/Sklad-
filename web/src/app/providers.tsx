@@ -8,11 +8,12 @@ import { Sidebar } from '../components/Sidebar';
 import { WebCameraScanner } from '../components/WebCameraScanner';
 import { QuickTransactionModal } from '../components/QuickTransactionModal';
 import { LoginScreen } from '../components/LoginScreen';
+import { ForcePasswordChangeModal } from '../components/ForcePasswordChangeModal';
 import { ProductWithStock } from '../lib/types';
 
 // Inner component that uses auth context
 const AuthenticatedApp: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, authenticatedUser } = useApp();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedProduct, setScannedProduct] = useState<ProductWithStock | null>(null);
 
@@ -24,6 +25,11 @@ const AuthenticatedApp: React.FC<{ children: React.ReactNode }> = ({ children })
   // Show login screen if not authenticated
   if (!isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  // Force password change on first login
+  if (authenticatedUser?.must_change_password) {
+    return <ForcePasswordChangeModal />;
   }
 
   // Authenticated — show main app

@@ -18,9 +18,9 @@ import {
   Lock,
   Eye,
   EyeOff,
-  BadgePercent,
   Warehouse as WarehouseIcon,
   KeyRound,
+  Copy,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -40,7 +40,6 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -48,7 +47,12 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
   const [warehouseId, setWarehouseId] = useState<string>(warehouses[0]?.id || '');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successInfo, setSuccessInfo] = useState<{ name: string; employeeId: string; username: string } | null>(null);
+  const [successInfo, setSuccessInfo] = useState<{
+    name: string;
+    employeeId: string;
+    username: string;
+    initialPassword: string;
+  } | null>(null);
 
   if (!isOpen) return null;
 
@@ -85,24 +89,16 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
     }
 
     if (!password) {
-      setError("Parol kiritilishi shart!");
+      setError("Boshlang'ich parol kiritilishi shart!");
       return;
     }
 
     if (password.length < 4) {
-      setError("Parol kamida 4 ta belgidan iborat bo'lishi kerak!");
+      setError("Boshlang'ich parol kamida 4 ta belgidan iborat bo'lishi kerak!");
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError("Parollar bir-biriga mos kelmayapti!");
-      return;
-    }
-
-    if (!email.trim() || !email.includes('@')) {
-      setError("To'g'ri elektron pochta manzilini kiriting!");
-      return;
-    }
+    const finalEmail = email.trim() ? email.trim().toLowerCase() : `${username.trim().toLowerCase()}@ombor.uz`;
 
     setIsSubmitting(true);
 
@@ -111,7 +107,7 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
         full_name: fullName.trim(),
         username: username.trim(),
         password,
-        email: email.trim().toLowerCase(),
+        email: finalEmail,
         phone: phone.trim() || undefined,
         role,
         assigned_warehouse_id: warehouseId || null,
@@ -134,23 +130,28 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
         name: result.user?.full_name || fullName,
         employeeId: result.user?.employee_id || prospectiveEmpId,
         username: result.user?.username || username.trim(),
+        initialPassword: password,
       });
-
-      setTimeout(() => {
-        setIsSubmitting(false);
-        setSuccessInfo(null);
-        setFullName('');
-        setUsername('');
-        setPassword('');
-        setConfirmPassword('');
-        setEmail('');
-        setPhone('');
-        onClose();
-      }, 1600);
+      setIsSubmitting(false);
     } catch (err: any) {
       setError(err?.message || "Kutilmagan xatolik yuz berdi!");
       setIsSubmitting(false);
     }
+  };
+
+  const handleResetForm = () => {
+    setSuccessInfo(null);
+    setFullName('');
+    setUsername('');
+    setPassword('');
+    setEmail('');
+    setPhone('');
+    setError(null);
+  };
+
+  const handleClose = () => {
+    handleResetForm();
+    onClose();
   };
 
   const rolesConfig = [
@@ -191,7 +192,7 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
 
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
         >
           <X className="w-5 h-5" />
@@ -204,40 +205,70 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              Yangi xodim hisobini ochish
+              Xodim uchun akkaunt yaratish
               <span className="text-[11px] px-2 py-0.5 rounded-full font-mono font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                Ro'yxatdan o'tish
+                Admin paneli
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Ombor xodimi uchun individual akkaunt, login va parol yaratish
+              Administrator tomonidan xodim uchun login va boshlang'ich parol belgilash
             </p>
           </div>
         </div>
 
         {/* Success Banner */}
         {successInfo ? (
-          <div className="p-6 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-3 animate-scaleUp">
+          <div className="p-6 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-center space-y-4 animate-scaleUp">
             <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/30">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-emerald-300">
-              Akkaunt muvaffaqiyatli yaratildi!
-            </h3>
-            <p className="text-xs text-slate-300">
-              Xodim: <span className="font-semibold text-white">{successInfo.name}</span>
-            </p>
-            <div className="flex flex-col items-center gap-1.5">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 border border-emerald-500/40 text-emerald-300 font-mono text-xs font-bold">
-                ID: {successInfo.employeeId}
+            <div>
+              <h3 className="text-base font-bold text-emerald-300">
+                Akkaunt muvaffaqiyatli yaratildi!
+              </h3>
+              <p className="text-xs text-slate-300 mt-1">
+                Xodim: <span className="font-bold text-white">{successInfo.name}</span>
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900/90 border border-white/10 space-y-2.5 text-left text-xs font-mono">
+              <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Shaxsiy ID:</span>
+                <span className="text-cyan-300 font-bold">{successInfo.employeeId}</span>
               </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/40 border border-indigo-500/40 text-indigo-300 font-mono text-xs font-bold">
-                Login: {successInfo.username}
+              <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                <span className="text-slate-400 font-sans">Login:</span>
+                <span className="text-indigo-300 font-bold">{successInfo.username}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400 font-sans">Boshlang'ich parol:</span>
+                <span className="text-amber-300 font-bold">{successInfo.initialPassword}</span>
               </div>
             </div>
-            <p className="text-[11px] text-slate-400">
-              Tizim avtomatik ravishda yangi xodim profiliga o'tkazilmoqda...
-            </p>
+
+            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-200 text-left flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+              <span>
+                Xodimmga ushbu login va boshlang'ich parolni berishingiz mumkin. Xodim birinchi marta tizimga kirganida, tizim undan o'zining shaxsiy parolini o'rnatishni so'raydi.
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white transition-colors"
+              >
+                + Boshqa xodim qo'shish
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-lg shadow-indigo-600/30"
+              >
+                Tushunarli (Yopish)
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -340,31 +371,13 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
                     className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
                   />
                 </div>
-                <p className="text-[10px] text-slate-500 mt-0.5 ml-1">Kamida 3 belgi, bo'sh joysiz</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 ml-1">Kamida 3 belgi</p>
               </div>
 
-              {/* Email */}
+              {/* Password (Boshlang'ich parol) */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Elektron pochta (Email) *
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="jamshid@warehouse.io"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Password */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Parol *
+                  Boshlang'ich parol *
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -373,71 +386,59 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Kamida 4 belgi"
-                    className="w-full pl-9 pr-10 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                    placeholder="Vaqtinchalik parol"
+                    className="w-full pl-9 pr-9 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300 transition-colors"
+                    className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300"
                     tabIndex={-1}
                   >
-                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-500 mt-0.5 ml-1">Kamida 4 belgi</p>
               </div>
 
-              {/* Confirm Password */}
+              {/* Email */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Parolni tasdiqlash *
+                  Elektron pochta (Email)
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Parolni qaytadan kiriting"
-                    className={`w-full pl-9 pr-3 py-2 bg-slate-900/90 border rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
-                      confirmPassword && confirmPassword !== password
-                        ? 'border-rose-500/50 focus:border-rose-500'
-                        : confirmPassword && confirmPassword === password
-                        ? 'border-emerald-500/50 focus:border-emerald-500'
-                        : 'border-white/10 focus:border-indigo-500'
-                    }`}
-                  />
-                </div>
-                {confirmPassword && confirmPassword !== password && (
-                  <p className="text-[10px] text-rose-400 mt-0.5 ml-1">Parollar mos kelmayapti</p>
-                )}
-                {confirmPassword && confirmPassword === password && (
-                  <p className="text-[10px] text-emerald-400 mt-0.5 ml-1">✓ Parollar mos</p>
-                )}
-              </div>
-
-              {/* Phone */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Telefon raqami (ixtiyoriy)
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+998 90 123-45-67"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="ixtiyoriy (avto: username@ombor.uz)"
                     className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                   />
                 </div>
               </div>
 
-              {/* Assigned Warehouse */}
+              {/* Phone */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Biriktiriladigan ombor filiali:
+                  Telefon raqami (Ixtiyoriy)
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+998 90 123 45 67"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Warehouse Assignment */}
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Biriktiriladigan ombor filiali *
                 </label>
                 <div className="relative">
                   <WarehouseIcon className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -447,8 +448,8 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
                     className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
                   >
                     {warehouses.map((wh) => (
-                      <option key={wh.id} value={wh.id}>
-                        {wh.name} {wh.address ? `(${wh.address})` : ''}
+                      <option key={wh.id} value={wh.id} className="bg-slate-900 text-white">
+                        {wh.name} — {wh.address || "Manzil ko'rsatilmagan"}
                       </option>
                     ))}
                   </select>
@@ -456,23 +457,31 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-white/10 mt-5">
+            {/* Info box */}
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-start gap-2">
+              <KeyRound className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                Yaratilgan xodimmga ushbu login va boshlang'ich parol beriladi. Xodim birinchi marta kirganida o'z parolini o'rnatishi kerak bo'ladi.
+              </span>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
               <button
                 type="button"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"
+                onClick={handleClose}
+                className="px-4 py-2.5 text-xs font-bold text-slate-400 hover:text-white transition-colors"
               >
                 Bekor qilish
               </button>
+
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all transform hover:scale-[1.02] disabled:opacity-50"
+                className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all transform hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <UserPlus className="w-4 h-4" />
-                <span>{isSubmitting ? 'Yaratilmoqda...' : 'Akkauntni ochish'}</span>
+                <span>{isSubmitting ? 'Yaratilmoqda...' : 'Xodim akkauntini yaratish'}</span>
               </button>
             </div>
           </form>

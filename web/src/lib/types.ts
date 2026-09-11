@@ -22,6 +22,7 @@ export interface UserProfile {
   role_id: string;
   assigned_warehouse_id: string | null;
   password_hash: string;
+  must_change_password?: boolean;
 }
 
 export interface Product {

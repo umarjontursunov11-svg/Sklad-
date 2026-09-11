@@ -8,13 +8,11 @@ import {
   Eye,
   EyeOff,
   LogIn,
-  UserPlus,
   AlertCircle,
   ShieldCheck,
   User,
   Loader2,
 } from 'lucide-react';
-import { StaffRegisterModal } from './StaffRegisterModal';
 
 interface LoginScreenProps {}
 
@@ -26,7 +24,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showRegisterModal, setShowRegisterModal] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,22 +172,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
                 )}
               </button>
             </form>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-white/10" />
-              <span className="text-[11px] text-slate-500 font-semibold">yoki</span>
-              <div className="flex-1 h-px bg-white/10" />
-            </div>
-
-            {/* Register Button */}
-            <button
-              onClick={() => setShowRegisterModal(true)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-bold text-slate-300 hover:text-white border border-white/10 hover:border-indigo-500/50 rounded-xl hover:bg-white/5 transition-all"
-            >
-              <UserPlus className="w-4 h-4" />
-              <span>Yangi xodim hisobini ochish</span>
-            </button>
           </div>
 
           {/* Footer */}
@@ -199,12 +180,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = () => {
           </div>
         </div>
       </div>
-
-      {/* Staff Registration Modal */}
-      <StaffRegisterModal
-        isOpen={showRegisterModal}
-        onClose={() => setShowRegisterModal(false)}
-      />
     </>
   );
 };

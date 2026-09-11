@@ -32,6 +32,7 @@ interface AppContextType {
   authenticatedUser: UserProfile | null;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
   warehouses: Warehouse[];
   currentWarehouse: Warehouse | null;
   setCurrentWarehouseId: (id: string | null) => void;
@@ -409,6 +410,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentUser]);
 
+  // Auth: change password function (used on first login or manual change)
+  const changePassword = useCallback(async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    if (!authenticatedUserId) {
+      return { success: false, error: "Tizimga kirilmagan!" };
+    }
+    if (!newPassword || newPassword.length < 4) {
+      return { success: false, error: "Yangi parol kamida 4 ta belgidan iborat bo'lishi kerak!" };
+    }
+
+    const newHash = await hashPassword(newPassword);
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === authenticatedUserId
+          ? { ...u, password_hash: newHash, must_change_password: false }
+          : u
+      )
+    );
+
+    const log: LoginLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user_id: authenticatedUserId,
+      user_name: authenticatedUser?.name || 'User',
+      employee_id: authenticatedUser?.employee_id || null,
+      role: authenticatedUser?.role || 'warehouse_staff',
+      event_type: 'admin_access_success',
+      ip_address: '127.0.0.1',
+      device_type: 'web',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+      details: { action: 'password_changed_by_user' },
+      created_at: new Date().toISOString(),
+    };
+    setLoginLogs((prev) => [log, ...prev]);
+
+    return { success: true };
+  }, [authenticatedUserId, authenticatedUser]);
+
   const setCurrentUserId = (id: string) => {
     const prevUser = currentUser;
     const nextUser = users.find((u) => u.id === id) || users[0];
@@ -537,15 +575,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role_id: roleId,
       assigned_warehouse_id: data.assigned_warehouse_id || null,
       password_hash,
+      must_change_password: true, // Staff member must set their own password upon first login
     };
 
     setUsers((prev) => [...prev, newUser]);
 
-    // Auto-login the new user
-    setAuthenticatedUserId(newId);
-    setCurrentUserIdState(newId);
-    if (newUser.assigned_warehouse_id) {
-      setCurrentWarehouseIdState(newUser.assigned_warehouse_id);
+    // If no user is logged in, auto-login as the new user. If Admin is already logged in, preserve Admin's session.
+    if (!authenticatedUserId) {
+      setAuthenticatedUserId(newId);
+      setCurrentUserIdState(newId);
+      if (newUser.assigned_warehouse_id) {
+        setCurrentWarehouseIdState(newUser.assigned_warehouse_id);
+      }
     }
 
     const regLog: LoginLog = {
@@ -558,7 +599,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ip_address: '127.0.0.1',
       device_type: 'web',
       user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
-      details: { action: 'staff_self_registered', username: trimmedUsername, warehouse_id: data.assigned_warehouse_id },
+      details: { action: 'staff_account_created_by_admin', username: trimmedUsername, warehouse_id: data.assigned_warehouse_id },
       created_at: new Date().toISOString(),
     };
     setLoginLogs((prev) => [regLog, ...prev]);
@@ -1402,6 +1443,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authenticatedUser,
         login,
         logout,
+        changePassword,
         warehouses,
         currentWarehouse,
         setCurrentWarehouseId,
