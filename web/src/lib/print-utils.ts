@@ -13,7 +13,10 @@ export const printViaIframe = (htmlContent: string) => {
 
   iframe = document.createElement('iframe');
   iframe.id = iframeId;
-  iframe.setAttribute('style', 'position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: 0; visibility: hidden;');
+  iframe.setAttribute(
+    'style',
+    'position: fixed; top: -10000px; left: -10000px; width: 1000px; height: 1000px; border: 0; opacity: 0; pointer-events: none;'
+  );
   document.body.appendChild(iframe);
 
   const doc = iframe.contentWindow?.document;
@@ -26,12 +29,44 @@ export const printViaIframe = (htmlContent: string) => {
   doc.write(htmlContent);
   doc.close();
 
-  // Give images (like QR codes) a short moment to render, then invoke browser print
-  setTimeout(() => {
-    if (!iframe || !iframe.contentWindow) return;
-    iframe.contentWindow.focus();
-    iframe.contentWindow.print();
-  }, 250);
+  let printed = false;
+  const triggerPrint = () => {
+    if (printed) return;
+    printed = true;
+    try {
+      if (!iframe || !iframe.contentWindow) return;
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (err) {
+      console.error('Print failed:', err);
+    }
+  };
+
+  if (iframe.contentWindow) {
+    const images = doc.getElementsByTagName('img');
+    if (images.length > 0) {
+      let loadedCount = 0;
+      const totalImages = images.length;
+      const onImgDone = () => {
+        loadedCount++;
+        if (loadedCount >= totalImages) {
+          setTimeout(triggerPrint, 100);
+        }
+      };
+
+      for (let i = 0; i < totalImages; i++) {
+        if (images[i].complete) {
+          onImgDone();
+        } else {
+          images[i].onload = onImgDone;
+          images[i].onerror = onImgDone;
+        }
+      }
+      setTimeout(triggerPrint, 600);
+    } else {
+      setTimeout(triggerPrint, 150);
+    }
+  }
 };
 
 export const escapeHtml = (str: string): string => {

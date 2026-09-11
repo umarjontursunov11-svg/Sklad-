@@ -72,7 +72,8 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
       const map: { [id: string]: string } = {};
       for (const item of list) {
         try {
-          const url = await QRCode.toDataURL(item.qr_code_data, {
+          const qrText = item.qr_code_data || item.id || 'WMS-QR';
+          const url = await QRCode.toDataURL(qrText, {
             width: 400,
             margin: 1,
             errorCorrectionLevel: 'M',
@@ -80,7 +81,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           });
           map[item.id] = url;
         } catch (e) {
-          console.error(e);
+          console.error('Failed to generate QR for product:', item.name, e);
         }
       }
       setQrMap(map);
@@ -521,8 +522,8 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm no-print">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 no-print">
+      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden rounded-2xl bg-slate-950 border border-white/15 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-white/10 bg-slate-900/60">
           <div className="flex items-center gap-3">
