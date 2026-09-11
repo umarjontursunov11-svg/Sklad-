@@ -40,12 +40,14 @@ export const INITIAL_USERS: UserProfile[] = [
     id: 'usr-admin',
     name: 'Tursunov Umarjon (Admin)',
     full_name: 'Tursunov Umarjon',
+    username: 'admin',
     email: 'admin@warehouse.io',
     phone: '+998 90 123-45-67',
     employee_id: 'EMP-0001',
     role: 'admin',
     role_id: '11111111-1111-1111-1111-111111111111',
     assigned_warehouse_id: null,
+    password_hash: '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f',
   },
 ];
 

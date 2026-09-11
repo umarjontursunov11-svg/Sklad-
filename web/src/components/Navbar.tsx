@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Calendar,
   UserPlus,
+  LogOut,
 } from 'lucide-react';
 import { StaffRegisterModal } from './StaffRegisterModal';
 
@@ -30,7 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
     setCurrentWarehouseId,
     users,
     currentUser,
-    setCurrentUserId,
+    logout,
     lowStockItems,
     expiringItems,
   } = useApp();
@@ -282,7 +283,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
           )}
         </div>
 
-        {/* Individual Staff Account Switcher */}
+        {/* Current User Info & Logout */}
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
@@ -330,55 +331,72 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
           </button>
 
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-72 p-3 rounded-2xl glass-panel border border-white/10 shadow-2xl z-50">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-2 px-1">
-                Xodim hisobini almashtirish
-              </span>
-              <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                {users.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => {
-                      setCurrentUserId(u.id);
-                      setShowUserMenu(false);
-                    }}
-                    className={`w-full text-left p-2.5 rounded-xl text-xs flex items-center justify-between transition-colors ${
-                      currentUser.id === u.id
-                        ? 'bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-600/30'
-                        : 'text-slate-300 hover:bg-white/5'
-                    }`}
-                  >
-                    <div>
-                      <div className="font-semibold flex items-center gap-1.5 truncate">
-                        <span>{u.full_name || u.name}</span>
-                        {u.employee_id && (
-                          <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${currentUser.id === u.id ? 'bg-black/30 text-white' : 'bg-cyan-500/20 text-cyan-300'}`}>
-                            {u.employee_id}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] opacity-75 mt-0.5">{u.email}</div>
+            <div className="absolute right-0 mt-2 w-72 p-3 rounded-2xl glass-panel border border-white/10 shadow-2xl z-50 animate-fadeIn">
+              {/* Current User Info */}
+              <div className="pb-3 mb-3 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center font-bold text-sm">
+                    {currentUser.full_name ? currentUser.full_name.charAt(0) : currentUser.name.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      {currentUser.full_name || currentUser.name}
+                      {currentUser.employee_id && (
+                        <span className="text-[9px] px-1 py-0.2 rounded font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                          {currentUser.employee_id}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/30 shrink-0 ml-2">
-                      {u.role.replace('_', ' ')}
+                    <div className="text-[10px] text-slate-400 mt-0.5">{currentUser.email}</div>
+                    {currentUser.username && (
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        Login: <span className="text-indigo-300 font-mono">{currentUser.username}</span>
+                      </div>
+                    )}
+                    <span
+                      className={`inline-block mt-1 text-[9px] px-1.5 py-0.5 uppercase font-bold rounded ${
+                        currentUser.role === 'admin'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : currentUser.role === 'warehouse_manager'
+                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                          : currentUser.role === 'receiver'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : currentUser.role === 'dispatcher'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                      }`}
+                    >
+                      {currentUser.role.replace('_', ' ')}
                     </span>
-                  </button>
-                ))}
+                  </div>
+                </div>
               </div>
 
-              {/* Staff Self-Registration Trigger */}
-              <div className="pt-2.5 mt-2.5 border-t border-white/10">
+              {/* Add Staff (only admin/manager) */}
+              {(currentUser.role === 'admin' || currentUser.role === 'warehouse_manager') && (
                 <button
                   onClick={() => {
                     setShowUserMenu(false);
                     setShowRegisterModal(true);
                   }}
-                  className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.01]"
+                  className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.01] mb-2.5"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>+ Yangi xodim hisobini ochish</span>
                 </button>
-              </div>
+              )}
+
+              {/* Logout Button */}
+              <button
+                onClick={() => {
+                  setShowUserMenu(false);
+                  logout();
+                }}
+                className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs font-bold text-rose-300 hover:text-white border border-rose-500/30 hover:bg-rose-500/10 transition-all"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Tizimdan chiqish</span>
+              </button>
             </div>
           )}
         </div>

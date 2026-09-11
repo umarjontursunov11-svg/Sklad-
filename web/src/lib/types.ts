@@ -14,12 +14,14 @@ export interface UserProfile {
   id: string;
   name: string;
   full_name: string;
+  username: string;
   email: string;
   phone?: string | null;
   employee_id: string;
   role: UserRole;
   role_id: string;
   assigned_warehouse_id: string | null;
+  password_hash: string;
 }
 
 export interface Product {

@@ -1,11 +1,37 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import QRCode from 'qrcode';
 import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog, UserRole } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
 
+// SHA-256 hash utility (sync version using SubtleCrypto workaround)
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Synchronous hash for comparison (using simple hash)
+export function hashPasswordSync(password: string): string {
+  // Simple djb2-based hash — for localStorage/mock usage only
+  let hash = 0;
+  for (let i = 0; i < password.length; i++) {
+    const char = password.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16);
+}
+
 interface AppContextType {
+  // Auth
+  isAuthenticated: boolean;
+  authenticatedUser: UserProfile | null;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
   warehouses: Warehouse[];
   currentWarehouse: Warehouse | null;
   setCurrentWarehouseId: (id: string | null) => void;
@@ -14,11 +40,13 @@ interface AppContextType {
   setCurrentUserId: (id: string) => void;
   registerStaffUser: (data: {
     full_name: string;
+    username: string;
+    password: string;
     email: string;
     phone?: string;
     role: UserRole;
     assigned_warehouse_id?: string | null;
-  }) => { success: boolean; error?: string; user?: UserProfile };
+  }) => Promise<{ success: boolean; error?: string; user?: UserProfile }>;
   deleteStaffUser: (userId: string) => { success: boolean; error?: string };
   products: Product[];
   productsWithStock: ProductWithStock[];
@@ -101,15 +129,16 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEYS = {
-  USERS: 'wms_users_v4_market',
-  PRODUCTS: 'wms_products_v4_market',
-  STOCK: 'wms_stock_v4_market',
-  MOVEMENTS: 'wms_movements_v4_market',
-  INVOICES: 'wms_invoices_v4_market',
-  CORRECTIONS: 'wms_corrections_v4_market',
-  LOGIN_LOGS: 'wms_login_logs_v4_market',
-  CURRENT_USER: 'wms_current_user_v4_market',
-  CURRENT_WH: 'wms_current_wh_v4_market',
+  USERS: 'wms_users_v5_auth',
+  PRODUCTS: 'wms_products_v5_auth',
+  STOCK: 'wms_stock_v5_auth',
+  MOVEMENTS: 'wms_movements_v5_auth',
+  INVOICES: 'wms_invoices_v5_auth',
+  CORRECTIONS: 'wms_corrections_v5_auth',
+  LOGIN_LOGS: 'wms_login_logs_v5_auth',
+  CURRENT_USER: 'wms_current_user_v5_auth',
+  CURRENT_WH: 'wms_current_wh_v5_auth',
+  AUTH_SESSION: 'wms_auth_session_v5',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -127,6 +156,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [adminSessionVerified, setAdminSessionVerified] = useState<boolean>(false);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
+
+  // Auth state
+  const [authenticatedUserId, setAuthenticatedUserId] = useState<string | null>(null);
 
   // Load from localStorage only after initial client mount to prevent SSR hydration mismatch
   useEffect(() => {
@@ -237,6 +269,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [loginLogs, isHydrated]);
 
+  // Restore auth session from localStorage after hydration (must run after users are loaded)
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      try {
+        const savedSession = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
+        if (savedSession) {
+          const sessionData = JSON.parse(savedSession);
+          if (sessionData?.userId) {
+            setAuthenticatedUserId(sessionData.userId);
+            setCurrentUserIdState(sessionData.userId);
+            if (sessionData.warehouseId) {
+              setCurrentWarehouseIdState(sessionData.warehouseId);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore auth session:', e);
+      }
+    }
+  }, [isHydrated]);
+
+  // Sync auth session to localStorage
+  useEffect(() => {
+    if (isHydrated && typeof window !== 'undefined') {
+      if (authenticatedUserId) {
+        localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
+          userId: authenticatedUserId,
+          warehouseId: currentWarehouseId,
+          timestamp: Date.now(),
+        }));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+      }
+    }
+  }, [authenticatedUserId, currentWarehouseId, isHydrated]);
+
   const currentUser = useMemo(() => {
     return users.find((u) => u.id === currentUserId) || users[0];
   }, [users, currentUserId]);
@@ -262,6 +330,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setLoginLogs((prev) => [newLog, ...prev]);
   };
+
+  // Auth: computed values
+  const isAuthenticated = authenticatedUserId !== null;
+  const authenticatedUser = useMemo(() => {
+    if (!authenticatedUserId) return null;
+    return users.find(u => u.id === authenticatedUserId) || null;
+  }, [users, authenticatedUserId]);
+
+  // Auth: login function
+  const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const trimmedUsername = username.trim().toLowerCase();
+    if (!trimmedUsername) {
+      return { success: false, error: "Login kiritilishi shart!" };
+    }
+    if (!password) {
+      return { success: false, error: "Parol kiritilishi shart!" };
+    }
+
+    const user = users.find(u => u.username?.toLowerCase() === trimmedUsername);
+    if (!user) {
+      return { success: false, error: "Bunday login bilan foydalanuvchi topilmadi!" };
+    }
+
+    // Hash the input password and compare
+    const inputHash = await hashPassword(password);
+    if (inputHash !== user.password_hash) {
+      return { success: false, error: "Parol noto'g'ri!" };
+    }
+
+    // Success — set auth state
+    setAuthenticatedUserId(user.id);
+    setCurrentUserIdState(user.id);
+    if (user.assigned_warehouse_id) {
+      setCurrentWarehouseIdState(user.assigned_warehouse_id);
+    }
+
+    // Record login log
+    const loginLog: LoginLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user_id: user.id,
+      user_name: user.name,
+      employee_id: user.employee_id || null,
+      role: user.role,
+      event_type: 'login',
+      ip_address: '127.0.0.1',
+      device_type: 'web',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+      details: { method: 'password_auth', username: trimmedUsername },
+      created_at: new Date().toISOString(),
+    };
+    setLoginLogs((prev) => [loginLog, ...prev]);
+
+    return { success: true };
+  }, [users]);
+
+  // Auth: logout function
+  const logout = useCallback(() => {
+    const logoutLog: LoginLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user_id: currentUser?.id || 'unknown',
+      user_name: currentUser?.name || 'Unknown',
+      employee_id: currentUser?.employee_id || null,
+      role: currentUser?.role || 'warehouse_staff',
+      event_type: 'logout',
+      ip_address: '127.0.0.1',
+      device_type: 'web',
+      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+      details: { method: 'manual_logout' },
+      created_at: new Date().toISOString(),
+    };
+    setLoginLogs((prev) => [logoutLog, ...prev]);
+
+    setAuthenticatedUserId(null);
+    setAdminSessionVerified(false);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+    }
+  }, [currentUser]);
 
   const setCurrentUserId = (id: string) => {
     const prevUser = currentUser;
@@ -311,27 +457,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentWarehouseIdState(id);
   };
 
-  const registerStaffUser = (data: {
+  const registerStaffUser = async (data: {
     full_name: string;
+    username: string;
+    password: string;
     email: string;
     phone?: string;
     role: UserRole;
     assigned_warehouse_id?: string | null;
-  }): { success: boolean; error?: string; user?: UserProfile } => {
+  }): Promise<{ success: boolean; error?: string; user?: UserProfile }> => {
     const trimmedName = data.full_name.trim();
+    const trimmedUsername = data.username.trim().toLowerCase();
     const trimmedEmail = data.email.trim().toLowerCase();
 
     if (!trimmedName) {
       return { success: false, error: "Xodimning to'liq F.I.O kiritilishi shart!" };
     }
+    if (!trimmedUsername) {
+      return { success: false, error: "Login kiritilishi shart!" };
+    }
+    if (trimmedUsername.length < 3) {
+      return { success: false, error: "Login kamida 3 ta belgidan iborat bo'lishi kerak!" };
+    }
+    if (!data.password || data.password.length < 4) {
+      return { success: false, error: "Parol kamida 4 ta belgidan iborat bo'lishi kerak!" };
+    }
     if (!trimmedEmail) {
       return { success: false, error: 'Elektron pochta manzili kiritilishi shart!' };
     }
 
-    const exists = users.some((u) => u.email.toLowerCase() === trimmedEmail);
-    if (exists) {
+    // Check username uniqueness
+    const usernameExists = users.some((u) => u.username?.toLowerCase() === trimmedUsername);
+    if (usernameExists) {
+      return { success: false, error: 'Ushbu login allaqachon band! Boshqa login tanlang.' };
+    }
+
+    const emailExists = users.some((u) => u.email.toLowerCase() === trimmedEmail);
+    if (emailExists) {
       return { success: false, error: 'Ushbu elektron pochta bilan allaqachon akkaunt mavjud!' };
     }
+
+    // Hash password
+    const password_hash = await hashPassword(data.password);
 
     // Generate unique employee ID based on role
     const prefix =
@@ -362,15 +529,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: newId,
       name: trimmedName,
       full_name: trimmedName,
+      username: trimmedUsername,
       email: trimmedEmail,
       phone: data.phone?.trim() || null,
       employee_id,
       role: data.role,
       role_id: roleId,
       assigned_warehouse_id: data.assigned_warehouse_id || null,
+      password_hash,
     };
 
     setUsers((prev) => [...prev, newUser]);
+
+    // Auto-login the new user
+    setAuthenticatedUserId(newId);
     setCurrentUserIdState(newId);
     if (newUser.assigned_warehouse_id) {
       setCurrentWarehouseIdState(newUser.assigned_warehouse_id);
@@ -386,7 +558,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ip_address: '127.0.0.1',
       device_type: 'web',
       user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
-      details: { action: 'staff_self_registered', warehouse_id: data.assigned_warehouse_id },
+      details: { action: 'staff_self_registered', username: trimmedUsername, warehouse_id: data.assigned_warehouse_id },
       created_at: new Date().toISOString(),
     };
     setLoginLogs((prev) => [regLog, ...prev]);
@@ -1226,6 +1398,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        isAuthenticated,
+        authenticatedUser,
+        login,
+        logout,
         warehouses,
         currentWarehouse,
         setCurrentWarehouseId,
