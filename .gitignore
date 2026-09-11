@@ -41,3 +41,6 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local server data
+web/data/

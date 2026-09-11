@@ -183,32 +183,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
+        const loadInitialData = async () => {
+          try {
+            const res = await fetch('/api/sync');
+            if (res.ok) {
+              const serverData = await res.json();
+              if (Array.isArray(serverData.users) && serverData.users.length > 0) {
+                const sanitized = serverData.users.map((u: UserProfile) => ({
+                  ...u,
+                  password_hash: u.password_hash || '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f',
+                }));
+                setUsers(sanitized);
+                localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(sanitized));
+              }
+              if (Array.isArray(serverData.products) && serverData.products.length > 0) setProducts(serverData.products);
+              if (Array.isArray(serverData.stock) && serverData.stock.length > 0) setStock(serverData.stock);
+              if (Array.isArray(serverData.movements) && serverData.movements.length > 0) setMovements(serverData.movements);
+              if (Array.isArray(serverData.invoices) && serverData.invoices.length > 0) setInvoices(serverData.invoices);
+              if (Array.isArray(serverData.corrections) && serverData.corrections.length > 0) setCorrectionRequests(serverData.corrections);
+              if (Array.isArray(serverData.loginLogs) && serverData.loginLogs.length > 0) setLoginLogs(serverData.loginLogs);
+            }
+          } catch (err) {
+            console.warn('Server sync fetch failed, falling back to localStorage:', err);
+          } finally {
+            setIsHydrated(true);
+          }
+        };
+
+        loadInitialData();
+
         const savedUsers =
           localStorage.getItem(STORAGE_KEYS.USERS) ||
           localStorage.getItem('wms_users_v3_clean');
         if (savedUsers) {
-          const parsed = JSON.parse(savedUsers);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const updated = parsed.map((u: UserProfile) => {
-              let pHash = u.password_hash;
-              if (!pHash) {
-                pHash = '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f';
-              }
-              if (u.id === 'usr-admin') {
-                return {
-                  ...u,
-                  name: 'Tursunov Umarjon (Admin)',
-                  full_name: 'Tursunov Umarjon',
-                  password_hash: pHash,
-                };
-              }
-              return {
-                ...u,
-                password_hash: pHash,
-              };
-            });
-            setUsers(updated);
-          }
+          try {
+            const parsed = JSON.parse(savedUsers);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const updated = parsed.map((u: UserProfile) => {
+                let pHash = u.password_hash || '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f';
+                if (u.id === 'usr-admin') {
+                  return { ...u, name: 'Tursunov Umarjon (Admin)', full_name: 'Tursunov Umarjon', password_hash: pHash };
+                }
+                return { ...u, password_hash: pHash };
+              });
+              setUsers((prev) => {
+                const map = new Map<string, UserProfile>();
+                prev.forEach(u => map.set(u.username?.toLowerCase() || u.id, u));
+                updated.forEach(u => {
+                  const key = u.username?.toLowerCase() || u.id;
+                  if (!map.has(key)) map.set(key, u);
+                });
+                return Array.from(map.values());
+              });
+            }
+          } catch (e) {}
         }
 
         const savedProducts = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
@@ -316,6 +344,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Failed to restore auth session:', e);
       }
     }
+  }, [isHydrated]);
+
+  // Periodic background polling from /api/sync to pick up users created on other devices
+  useEffect(() => {
+    if (!isHydrated || typeof window === 'undefined') return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/sync');
+        if (res.ok) {
+          const serverData = await res.json();
+          if (Array.isArray(serverData.users) && serverData.users.length > 0) {
+            setUsers((prev) => {
+              const map = new Map<string, UserProfile>();
+              prev.forEach(u => map.set(u.username?.toLowerCase() || u.id, u));
+              serverData.users.forEach((u: UserProfile) => {
+                const key = u.username?.toLowerCase() || u.id;
+                map.set(key, { ...u, password_hash: u.password_hash || '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f' });
+              });
+              return Array.from(map.values());
+            });
+          }
+        }
+      } catch (e) {}
+    }, 5000);
+    return () => clearInterval(interval);
   }, [isHydrated]);
 
   // Sync auth session to localStorage
@@ -466,6 +519,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
+          const updatedUser = updated.find(u => u.id === authenticatedUserId);
+          if (updatedUser) {
+            fetch('/api/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'update_user', user: updatedUser }),
+            }).catch(() => {});
+          }
         } catch (e) {}
       }
       return updated;
@@ -621,14 +682,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setUsers((prev) => {
- const updated = [...prev, newUser];
- if (typeof window !== 'undefined') {
- try {
- localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
- } catch (e) {}
- }
- return updated;
- });
+      const updated = [...prev, newUser];
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
+          fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'register_user', user: newUser }),
+          }).catch(() => {});
+        } catch (e) {}
+      }
+      return updated;
+    });
 
     // If no user is logged in, auto-login as the new user. If Admin is already logged in, preserve Admin's session.
     if (!authenticatedUserId) {
