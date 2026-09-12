@@ -1,4 +1,127 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+
+const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_FILE = path.join(DATA_DIR, 'store.json');
+
+function readStoreData() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {}
+  return null;
+}
+
+export async function GET(request: Request) {
+  try {
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+
+    if (!botToken || !chatId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'TELEGRAM_BOT_TOKEN yoki TELEGRAM_CHAT_ID sozlanmagan Vercel/Environment variable faylida.',
+          isConfigMissing: true,
+        },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    let reportData: any = null;
+
+    // 1. Try fetching from Supabase RPC get_daily_report_data
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await (supabase as any).rpc('get_daily_report_data', { p_date: dateStr });
+        if (!error && data) {
+          reportData = {
+            reportDate: dateStr,
+            inboundCount: data.inbound?.total_count || 0,
+            inboundTotal: data.inbound?.total_quantity || 0,
+            inboundWarehouses: (data.inbound?.by_warehouse || []).reduce((acc: any, item: any) => {
+              acc[item.warehouse_name] = item.total_qty;
+              return acc;
+            }, {}),
+            outboundCount: data.outbound?.total_count || 0,
+            outboundTotal: data.outbound?.total_quantity || 0,
+            outboundWarehouses: (data.outbound?.by_warehouse || []).reduce((acc: any, item: any) => {
+              acc[item.warehouse_name] = item.total_qty;
+              return acc;
+            }, {}),
+            lowStockItems: (data.low_stock_items || []).map((p: any) => ({
+              name: p.name,
+              code: p.qr_code_data,
+              stock: p.current_total_stock,
+              min: p.min_stock_level,
+              unit: p.unit,
+            })),
+            topMoved: (data.top_moved_products || []).map((p: any) => ({
+              name: p.product_name,
+              volume: p.total_volume,
+              count: p.tx_count,
+              unit: p.unit,
+            })),
+            newProductsCount: data.new_products_count || 0,
+            salesCount: data.sales?.invoices_count || 0,
+            salesTotal: data.sales?.total_amount || 0,
+          };
+        }
+      } catch (e) {}
+    }
+
+    // 2. Fallback to server store.json file data if reportData wasn't generated via RPC
+    if (!reportData) {
+      const store = readStoreData();
+      const movements = store?.movements || [];
+      const products = store?.products || [];
+      const stock = store?.stock || [];
+
+      const todayMovements = movements.filter((m: any) => new Date(m.timestamp) >= startOfDay);
+      const inbounds = todayMovements.filter((m: any) => m.movement_type === 'inbound');
+      const outbounds = todayMovements.filter((m: any) => m.movement_type === 'outbound');
+
+      reportData = {
+        reportDate: dateStr,
+        inboundCount: inbounds.length,
+        inboundTotal: inbounds.reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0),
+        outboundCount: outbounds.length,
+        outboundTotal: outbounds.reduce((sum: number, m: any) => sum + Number(m.quantity || 0), 0),
+        newProductsCount: products.filter((p: any) => new Date(p.created_at || Date.now()) >= startOfDay).length,
+      };
+    }
+
+    const messageText = formatTelegramReportMessage(reportData);
+    const result = await sendTelegramMessage(botToken, chatId, messageText);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { success: false, error: result.error || 'Telegram API call failed' },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      trigger: 'cron_schedule_daily_report',
+      message_id: result.message_id,
+      sent_at: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || 'Server error' },
+      { status: 500 }
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -108,7 +231,7 @@ async function sendTelegramMessage(
       await new Promise((resolve) => setTimeout(resolve, 30000));
       const resRetry = await send();
       if (resRetry.ok) {
-        return { success: true, message_id: resRetry.result?.message_id };
+        return { success: true, message_id: resRetry.description || 'Success on retry' };
       }
       return { success: false, error: resRetry.description || err.message };
     } catch (e: any) {
