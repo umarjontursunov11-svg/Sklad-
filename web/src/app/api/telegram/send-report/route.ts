@@ -16,10 +16,13 @@ function readStoreData() {
   return null;
 }
 
+const DEFAULT_BOT_TOKEN = '8796402233:AAHkcD3lE1piqcC3yOWgTRUIXWJhtaSQ8qQ';
+const DEFAULT_CHAT_ID = '-1003964640399';
+
 export async function GET(request: Request) {
   try {
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_CHAT_ID;
 
     if (!botToken || !chatId) {
       return NextResponse.json(
@@ -126,8 +129,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const botToken = process.env.TELEGRAM_BOT_TOKEN;
-    const chatId = process.env.TELEGRAM_CHAT_ID;
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_CHAT_ID;
 
     // Check credentials
     if (!botToken || !chatId) {
