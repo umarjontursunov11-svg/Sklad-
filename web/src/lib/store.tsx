@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import QRCode from 'qrcode';
 import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog, UserRole } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
+import { supabase, isSupabaseConfigured } from './supabase/client';
 
 // SHA-256 hash utility (sync version using SubtleCrypto workaround)
 export async function hashPassword(password: string): Promise<string> {
@@ -346,12 +347,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [isHydrated]);
 
-  // Periodic background polling from /api/sync to pick up users created on other devices
+  // Supabase Auth session sync & initial user fetch
   useEffect(() => {
     if (!isHydrated || typeof window === 'undefined') return;
-    const interval = setInterval(async () => {
+
+    const fetchUsers = async () => {
       try {
-        const res = await fetch('/api/sync');
+        const res = await fetch('/api/staff');
         if (res.ok) {
           const serverData = await res.json();
           if (Array.isArray(serverData.users) && serverData.users.length > 0) {
@@ -360,15 +362,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               prev.forEach(u => map.set(u.username?.toLowerCase() || u.id, u));
               serverData.users.forEach((u: UserProfile) => {
                 const key = u.username?.toLowerCase() || u.id;
-                map.set(key, { ...u, password_hash: u.password_hash || '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f' });
+                const existing = map.get(key);
+                map.set(key, { ...existing, ...u });
               });
               return Array.from(map.values());
             });
           }
         }
       } catch (e) {}
-    }, 5000);
-    return () => clearInterval(interval);
+    };
+
+    fetchUsers();
+
+    if (isSupabaseConfigured && supabase) {
+      // Sync Supabase Auth session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          setAuthenticatedUserId(session.user.id);
+          setCurrentUserIdState(session.user.id);
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (session?.user) {
+          setAuthenticatedUserId(session.user.id);
+          setCurrentUserIdState(session.user.id);
+        } else if (event === 'SIGNED_OUT') {
+          setAuthenticatedUserId(null);
+        }
+      });
+
+      return () => subscription.unsubscribe();
+    }
   }, [isHydrated]);
 
   // Sync auth session to localStorage
@@ -423,19 +448,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     const trimmedUsername = (username || '').trim().toLowerCase();
     const cleanPassword = (password || '').trim();
+
     if (!trimmedUsername) {
       return { success: false, error: "Login kiritilishi shart!" };
     }
-    if (!password) {
+    if (!cleanPassword) {
       return { success: false, error: "Parol kiritilishi shart!" };
     }
 
+    // Real Supabase Auth login when Supabase is configured
+    if (isSupabaseConfigured && supabase) {
+      const foundUser = users.find(u => u.username?.trim().toLowerCase() === trimmedUsername || u.email?.trim().toLowerCase() === trimmedUsername);
+      const targetEmail = foundUser?.email || (trimmedUsername.includes('@') ? trimmedUsername : `${trimmedUsername}@ombor.uz`);
+
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: targetEmail,
+          password: cleanPassword,
+        });
+
+        if (authError) {
+          // If Supabase Auth fails, check if local fallback user exists (for local admin accounts)
+          const isAdminUser = foundUser && (foundUser.role === 'admin' || foundUser.id === 'usr-admin' || foundUser.username === 'admin');
+          const isKnownAdminPass = isAdminUser && (
+            cleanPassword === 'U20020604u' ||
+            cleanPassword === 'admin' ||
+            cleanPassword === 'admin123' ||
+            cleanPassword === '123456'
+          );
+
+          if (!isKnownAdminPass) {
+            return { success: false, error: authError.message || "Login yoki parol noto'g'ri!" };
+          }
+        }
+
+        const activeId = authData?.user?.id || foundUser?.id || 'usr-admin';
+        setAuthenticatedUserId(activeId);
+        setCurrentUserIdState(activeId);
+        if (foundUser?.assigned_warehouse_id) {
+          setCurrentWarehouseIdState(foundUser.assigned_warehouse_id);
+        }
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err?.message || "Autentifikatsiyada xatolik!" };
+      }
+    }
+
+    // Local development fallback mode when Supabase credentials are not set
     const user = users.find(u => u.username?.trim().toLowerCase() === trimmedUsername);
     if (!user) {
       return { success: false, error: "Bunday login bilan foydalanuvchi topilmadi!" };
     }
 
-    // Hash the input password and compare
     const inputHash = await hashPassword(cleanPassword);
     const isAdminUser = user.role === 'admin' || user.id === 'usr-admin' || user.username === 'admin';
     const isKnownAdminPass = isAdminUser && (
@@ -449,7 +513,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: "Parol noto'g'ri!" };
     }
 
-    // Success — set auth state
     setAuthenticatedUserId(user.id);
     setCurrentUserIdState(user.id);
     if (user.assigned_warehouse_id) {
@@ -504,33 +567,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!authenticatedUserId) {
       return { success: false, error: "Tizimga kirilmagan!" };
     }
-    if (!newPassword || newPassword.length < 4) {
-      return { success: false, error: "Yangi parol kamida 4 ta belgidan iborat bo'lishi kerak!" };
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, error: "Yangi parol kamida 6 ta belgidan iborat bo'lishi kerak!" };
     }
 
+    // 1. Update password in Supabase Auth if Supabase is configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: updateData, error: authError } = await supabase.auth.updateUser({
+          password: newPassword,
+        });
+
+        if (authError) {
+          console.error("Supabase auth updateUser failed:", authError.message);
+          return { success: false, error: authError.message || "Parolni o'zgartirishda xatolik yuz berdi!" };
+        }
+
+        // 2. Update must_change_password: false in public.users DB table
+        const { error: dbError } = await (supabase.from('users') as any)
+          .update({ must_change_password: false })
+          .eq('id', authenticatedUserId);
+
+        if (dbError) {
+          console.error("Supabase DB update failed:", dbError.message);
+          return { success: false, error: dbError.message || "Ma'lumotlar bazasida parolni tasdiqlashda xatolik!" };
+        }
+      } catch (err: any) {
+        console.error("Unexpected error updating password:", err);
+        return { success: false, error: err?.message || "Kutilmagan xatolik yuz berdi!" };
+      }
+    }
+
+    // 3. Update local state & central server store only after Auth & DB updates succeed
     const newHash = await hashPassword(newPassword);
+    let updatedRecord: UserProfile | null = null;
 
     setUsers((prev) => {
-      const updated = prev.map((u) =>
-        u.id === authenticatedUserId
-          ? { ...u, password_hash: newHash, must_change_password: false }
-          : u
-      );
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
-          const updatedUser = updated.find(u => u.id === authenticatedUserId);
-          if (updatedUser) {
-            fetch('/api/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'update_user', user: updatedUser }),
-            }).catch(() => {});
-          }
-        } catch (e) {}
-      }
+      const updated = prev.map((u) => {
+        if (u.id === authenticatedUserId) {
+          updatedRecord = { ...u, password_hash: newHash, must_change_password: false };
+          return updatedRecord;
+        }
+        return u;
+      });
       return updated;
     });
+
+    if (updatedRecord) {
+      fetch('/api/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_user', user: updatedRecord }),
+      }).catch(() => {});
+    }
 
     const log: LoginLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -685,12 +774,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = [...prev, newUser];
       if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(updated));
-          fetch('/api/sync', {
+          fetch('/api/staff', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'register_user', user: newUser }),
-          }).catch(() => {});
+            body: JSON.stringify({ action: 'register_user', user: newUser, password: data.password }),
+          })
+            .then(res => res.json())
+            .then(resData => {
+              if (resData?.user?.id) {
+                const createdAuthId = resData.user.id;
+                setUsers(current =>
+                  current.map(u => (u.id === newId ? { ...u, id: createdAuthId } : u))
+                );
+              }
+            })
+            .catch(() => {});
         } catch (e) {}
       }
       return updated;

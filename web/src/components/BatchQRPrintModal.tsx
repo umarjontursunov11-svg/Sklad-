@@ -100,9 +100,9 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
               try {
                 const qrText = item.qr_code_data || item.id || 'WMS-QR';
                 const url = await QRCode.toDataURL(qrText, {
-                  width: 400,
+                  width: 180,
                   margin: 1,
-                  errorCorrectionLevel: 'M',
+                  errorCorrectionLevel: 'L',
                   color: { dark: '#000000', light: '#ffffff' },
                 });
                 map[item.id] = url;
@@ -483,7 +483,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           </html>
         `;
 
-        printViaIframe(html);
+        await printViaIframe(html);
       } else {
         let cardsHtml = '';
         const chunkSize = 25;
@@ -602,7 +602,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           </html>
         `;
 
-        printViaIframe(html);
+        await printViaIframe(html);
       }
     } catch (err: any) {
       console.error('Print Window Error:', err);

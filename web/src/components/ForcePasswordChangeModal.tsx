@@ -33,8 +33,8 @@ export const ForcePasswordChangeModal: React.FC = () => {
       return;
     }
 
-    if (newPassword.length < 4) {
-      setError("Yangi parol kamida 4 ta belgidan iborat bo'lishi kerak!");
+    if (newPassword.length < 6) {
+      setError("Yangi parol kamida 6 ta belgidan iborat bo'lishi kerak!");
       return;
     }
 
