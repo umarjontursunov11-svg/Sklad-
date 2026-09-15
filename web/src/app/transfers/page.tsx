@@ -24,7 +24,7 @@ export default function TransfersPage() {
   const sourceStock = selectedProduct ? selectedProduct.warehouse_stock[sourceWarehouseId] ?? 0 : 0;
   const targetStock = selectedProduct ? selectedProduct.warehouse_stock[targetWarehouseId] ?? 0 : 0;
 
-  const handleTransfer = (e: React.FormEvent) => {
+  const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -39,7 +39,7 @@ export default function TransfersPage() {
       return;
     }
 
-    const res = executeMovement({
+    const res = await executeMovement({
       productId,
       warehouseId: sourceWarehouseId,
       targetWarehouseId,

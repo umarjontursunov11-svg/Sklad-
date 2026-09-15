@@ -31,7 +31,7 @@ CREATE POLICY "Staff and Admins can view report logs"
         EXISTS (
             SELECT 1 FROM public.users u
             JOIN public.roles r ON u.role_id = r.id
-            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'warehouse_manager', 'warehouse_staff', 'receiver', 'dispatcher')
         )
     );
 

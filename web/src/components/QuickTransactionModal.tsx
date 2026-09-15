@@ -93,7 +93,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
 
   const lastTransaction = productMovements[0] || null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -145,7 +145,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
       return;
     }
 
-    const result = executeMovement({
+    const result = await executeMovement({
       productId: product.id,
       warehouseId: selectedWarehouseId,
       targetWarehouseId: movementType === 'transfer' ? targetWarehouseId : null,

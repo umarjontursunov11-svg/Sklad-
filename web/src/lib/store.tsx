@@ -103,7 +103,7 @@ interface AppContextType {
     movementType: MovementType;
     quantity: number;
     notes?: string;
-  }) => { success: boolean; error?: string; movement?: StockMovement };
+  }) => Promise<{ success: boolean; error?: string; movement?: StockMovement }>;
   adjustStockBalance: (params: {
     productId: string;
     warehouseId: string;
@@ -141,7 +141,7 @@ interface AppContextType {
     status: 'approved' | 'rejected';
     reviewNotes?: string;
   }) => { success: boolean; error?: string };
-  verifyAdminPin: (pin: string) => boolean;
+  verifyAdminPin: (pin: string) => Promise<boolean>;
   recordLoginLog: (eventType: LoginLog['event_type'], details?: Record<string, any>) => void;
   findProductByQR: (qrData: string) => ProductWithStock | undefined;
 }
@@ -158,7 +158,6 @@ const STORAGE_KEYS = {
   LOGIN_LOGS: 'wms_login_logs_v5_auth',
   CURRENT_USER: 'wms_current_user_v5_auth',
   CURRENT_WH: 'wms_current_wh_v5_auth',
-  AUTH_SESSION: 'wms_auth_session_v5',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -326,60 +325,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [loginLogs, isHydrated]);
 
-  // Restore auth session from localStorage after hydration (must run after users are loaded)
-  useEffect(() => {
-    if (isHydrated && typeof window !== 'undefined') {
-      try {
-        const savedSession = localStorage.getItem(STORAGE_KEYS.AUTH_SESSION);
-        if (savedSession) {
-          const sessionData = JSON.parse(savedSession);
-          if (sessionData?.userId) {
-            setAuthenticatedUserId(sessionData.userId);
-            setCurrentUserIdState(sessionData.userId);
-            if (sessionData.warehouseId) {
-              setCurrentWarehouseIdState(sessionData.warehouseId);
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to restore auth session:', e);
-      }
-    }
-  }, [isHydrated]);
-
-  // Supabase Auth session sync & initial user fetch
+  // Supabase Auth session sync & real DB user profiles
   useEffect(() => {
     if (!isHydrated || typeof window === 'undefined') return;
 
-    const fetchUsers = async () => {
-      try {
-        const res = await fetch('/api/staff');
-        if (res.ok) {
-          const serverData = await res.json();
-          if (Array.isArray(serverData.users) && serverData.users.length > 0) {
-            setUsers((prev) => {
-              const map = new Map<string, UserProfile>();
-              prev.forEach(u => map.set(u.username?.toLowerCase() || u.id, u));
-              serverData.users.forEach((u: UserProfile) => {
-                const key = u.username?.toLowerCase() || u.id;
-                const existing = map.get(key);
-                map.set(key, { ...existing, ...u });
-              });
-              return Array.from(map.values());
-            });
-          }
-        }
-      } catch (e) {}
-    };
-
-    fetchUsers();
-
     if (isSupabaseConfigured && supabase) {
-      // Sync Supabase Auth session
+      // 1. Fetch real users and roles from Supabase database
+      supabase
+        .from('users')
+        .select('id, name, email, role_id, employee_id, phone, full_name, assigned_warehouse_id, must_change_password, roles(name)')
+        .then(({ data, error }) => {
+          if (!error && Array.isArray(data) && data.length > 0) {
+            const mapped: UserProfile[] = data.map((u: any) => ({
+              id: u.id,
+              name: u.full_name || u.name,
+              full_name: u.full_name || u.name,
+              username: u.email ? u.email.split('@')[0] : u.name,
+              email: u.email,
+              employee_id: u.employee_id || null,
+              phone: u.phone || null,
+              role: (u.roles?.name || 'warehouse_staff') as UserRole,
+              role_id: u.role_id || '',
+              password_hash: '',
+              assigned_warehouse_id: u.assigned_warehouse_id || null,
+              must_change_password: u.must_change_password ?? false,
+            }));
+            setUsers(mapped);
+          }
+        });
+
+      // 2. Sync Supabase Auth session
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
           setAuthenticatedUserId(session.user.id);
           setCurrentUserIdState(session.user.id);
+          const role = session.user.user_metadata?.role;
+          if (role) {
+            document.cookie = `wms_user_role=${role}; path=/; max-age=86400; SameSite=Lax`;
+          }
         }
       });
 
@@ -387,29 +370,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (session?.user) {
           setAuthenticatedUserId(session.user.id);
           setCurrentUserIdState(session.user.id);
+          const role = session.user.user_metadata?.role;
+          if (role) {
+            document.cookie = `wms_user_role=${role}; path=/; max-age=86400; SameSite=Lax`;
+          }
         } else if (event === 'SIGNED_OUT') {
           setAuthenticatedUserId(null);
+          setAdminSessionVerified(false);
+          document.cookie = 'wms_user_role=; path=/; max-age=0';
+          document.cookie = 'admin_verified=; path=/; max-age=0';
         }
       });
 
       return () => subscription.unsubscribe();
     }
   }, [isHydrated]);
-
-  // Sync auth session to localStorage
-  useEffect(() => {
-    if (isHydrated && typeof window !== 'undefined') {
-      if (authenticatedUserId) {
-        localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, JSON.stringify({
-          userId: authenticatedUserId,
-          warehouseId: currentWarehouseId,
-          timestamp: Date.now(),
-        }));
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
-      }
-    }
-  }, [authenticatedUserId, currentWarehouseId, isHydrated]);
 
   const currentUser = useMemo(() => {
     return users.find((u) => u.id === currentUserId) || users[0];
@@ -456,90 +431,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: "Parol kiritilishi shart!" };
     }
 
-    // Real Supabase Auth login when Supabase is configured
-    if (isSupabaseConfigured && supabase) {
-      const foundUser = users.find(u => u.username?.trim().toLowerCase() === trimmedUsername || u.email?.trim().toLowerCase() === trimmedUsername);
-      const targetEmail = foundUser?.email || (trimmedUsername.includes('@') ? trimmedUsername : `${trimmedUsername}@ombor.uz`);
+    // Strict Supabase Auth login - ALL authentication goes through signInWithPassword
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: false, error: "Supabase maʼlumotlar bazasi sozlanmagan!" };
+    }
 
-      try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: targetEmail,
-          password: cleanPassword,
-        });
+    const foundUser = users.find(u => u.username?.trim().toLowerCase() === trimmedUsername || u.email?.trim().toLowerCase() === trimmedUsername);
+    const targetEmail = foundUser?.email || (trimmedUsername.includes('@') ? trimmedUsername : `${trimmedUsername}@ombor.uz`);
 
-        if (authError) {
-          // If Supabase Auth fails, check if local fallback user exists (for local admin accounts)
-          const isAdminUser = foundUser && (foundUser.role === 'admin' || foundUser.id === 'usr-admin' || foundUser.username === 'admin');
-          const isKnownAdminPass = isAdminUser && (
-            cleanPassword === 'U20020604u' ||
-            cleanPassword === 'admin' ||
-            cleanPassword === 'admin123' ||
-            cleanPassword === '123456'
-          );
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
+        password: cleanPassword,
+      });
 
-          if (!isKnownAdminPass) {
-            return { success: false, error: authError.message || "Login yoki parol noto'g'ri!" };
-          }
-        }
-
-        const activeId = authData?.user?.id || foundUser?.id || 'usr-admin';
-        setAuthenticatedUserId(activeId);
-        setCurrentUserIdState(activeId);
-        if (foundUser?.assigned_warehouse_id) {
-          setCurrentWarehouseIdState(foundUser.assigned_warehouse_id);
-        }
-        return { success: true };
-      } catch (err: any) {
-        return { success: false, error: err?.message || "Autentifikatsiyada xatolik!" };
+      if (authError || !authData?.user) {
+        return { success: false, error: authError?.message || "Login yoki parol noto'g'ri!" };
       }
+
+      const activeId = authData.user.id;
+      setAuthenticatedUserId(activeId);
+      setCurrentUserIdState(activeId);
+
+      // Set cookie for middleware route guarding
+      const userRole = foundUser?.role || authData.user.user_metadata?.role || 'warehouse_staff';
+      if (typeof document !== 'undefined') {
+        document.cookie = `wms_user_role=${userRole}; path=/; max-age=86400; SameSite=Lax`;
+        if (userRole === 'admin') {
+          document.cookie = `admin_verified=true; path=/; max-age=14400; SameSite=Lax`;
+        }
+      }
+
+      if (foundUser?.assigned_warehouse_id) {
+        setCurrentWarehouseIdState(foundUser.assigned_warehouse_id);
+      }
+
+      const loginLog: LoginLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        user_id: activeId,
+        user_name: foundUser?.name || targetEmail,
+        employee_id: foundUser?.employee_id || null,
+        role: userRole,
+        event_type: 'login',
+        ip_address: '127.0.0.1',
+        device_type: 'web',
+        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
+        details: { method: 'supabase_auth', email: targetEmail },
+        created_at: new Date().toISOString(),
+      };
+      setLoginLogs((prev) => [loginLog, ...prev]);
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || "Autentifikatsiyada xatolik!" };
     }
-
-    // Local development fallback mode when Supabase credentials are not set
-    const user = users.find(u => u.username?.trim().toLowerCase() === trimmedUsername);
-    if (!user) {
-      return { success: false, error: "Bunday login bilan foydalanuvchi topilmadi!" };
-    }
-
-    const inputHash = await hashPassword(cleanPassword);
-    const isAdminUser = user.role === 'admin' || user.id === 'usr-admin' || user.username === 'admin';
-    const isKnownAdminPass = isAdminUser && (
-      cleanPassword === 'U20020604u' ||
-      cleanPassword === 'admin' ||
-      cleanPassword === 'admin123' ||
-      cleanPassword === '123456'
-    );
-
-    if (user.password_hash && inputHash !== user.password_hash && !isKnownAdminPass) {
-      return { success: false, error: "Parol noto'g'ri!" };
-    }
-
-    setAuthenticatedUserId(user.id);
-    setCurrentUserIdState(user.id);
-    if (user.assigned_warehouse_id) {
-      setCurrentWarehouseIdState(user.assigned_warehouse_id);
-    }
-
-    // Record login log
-    const loginLog: LoginLog = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      user_id: user.id,
-      user_name: user.name,
-      employee_id: user.employee_id || null,
-      role: user.role,
-      event_type: 'login',
-      ip_address: '127.0.0.1',
-      device_type: 'web',
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Server',
-      details: { method: 'password_auth', username: trimmedUsername },
-      created_at: new Date().toISOString(),
-    };
-    setLoginLogs((prev) => [loginLog, ...prev]);
-
-    return { success: true };
   }, [users]);
 
   // Auth: logout function
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    if (isSupabaseConfigured && supabase) {
+      await supabase.auth.signOut().catch(() => {});
+    }
+
     const logoutLog: LoginLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       user_id: currentUser?.id || 'unknown',
@@ -557,8 +510,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAuthenticatedUserId(null);
     setAdminSessionVerified(false);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+
+    if (typeof document !== 'undefined') {
+      document.cookie = 'wms_user_role=; path=/; max-age=0';
+      document.cookie = 'admin_verified=; path=/; max-age=0';
     }
   }, [currentUser]);
 
@@ -612,14 +567,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       return updated;
     });
-
-    if (updatedRecord) {
-      fetch('/api/staff', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_user', user: updatedRecord }),
-      }).catch(() => {});
-    }
 
     const log: LoginLog = {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -770,29 +717,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       must_change_password: true, // Staff member must set their own password upon first login
     };
 
-    setUsers((prev) => {
-      const updated = [...prev, newUser];
-      if (typeof window !== 'undefined') {
-        try {
-          fetch('/api/staff', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'register_user', user: newUser, password: data.password }),
-          })
-            .then(res => res.json())
-            .then(resData => {
-              if (resData?.user?.id) {
-                const createdAuthId = resData.user.id;
-                setUsers(current =>
-                  current.map(u => (u.id === newId ? { ...u, id: createdAuthId } : u))
-                );
-              }
-            })
-            .catch(() => {});
-        } catch (e) {}
-      }
-      return updated;
-    });
+    setUsers((prev) => [...prev, newUser]);
 
     // If no user is logged in, auto-login as the new user. If Admin is already logged in, preserve Admin's session.
     if (!authenticatedUserId) {
@@ -1049,8 +974,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSelectedProductIds((prev) => prev.filter((pId) => pId !== id));
   };
 
-  // Atomic Stock Movement Execution
-  const executeMovement = ({
+  // Atomic Stock Movement Execution invoking real execute_stock_movement RPC
+  const executeMovement = async ({
     productId,
     warehouseId,
     targetWarehouseId = null,
@@ -1064,7 +989,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     movementType: MovementType;
     quantity: number;
     notes?: string;
-  }): { success: boolean; error?: string; movement?: StockMovement } => {
+  }): Promise<{ success: boolean; error?: string; movement?: StockMovement }> => {
     if (quantity <= 0) {
       return { success: false, error: 'Quantity must be greater than 0.' };
     }
@@ -1092,15 +1017,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const currentSourceStock = stock.find(
       (s) => s.product_id === productId && s.warehouse_id === warehouseId
     );
-    const sourceQty = currentSourceStock ? currentSourceStock.quantity : 0;
-
-    // Check OUTBOUND & TRANSFER availability
-    if ((movementType === 'outbound' || movementType === 'transfer') && sourceQty < quantity) {
-      return {
-        success: false,
-        error: `Insufficient stock in ${sourceWh.name}. Available: ${sourceQty} ${product.unit}, Requested: ${quantity} ${product.unit}`,
-      };
-    }
+    const sourceQty = currentSourceStock ? Number(currentSourceStock.quantity) : 0;
 
     if (movementType === 'transfer') {
       if (!targetWarehouseId || targetWarehouseId === warehouseId) {
@@ -1108,76 +1025,102 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Apply stock balance updates
-    setStock((prev) => {
-      let updated = [...prev];
+    // Real Supabase RPC invocation
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('execute_stock_movement', {
+          p_product_id: productId,
+          p_warehouse_id: warehouseId,
+          p_movement_type: movementType,
+          p_quantity: quantity,
+          p_user_id: currentUser.id?.includes('-') ? currentUser.id : null,
+          p_target_warehouse_id: targetWarehouseId || null,
+          p_notes: notes || null,
+        });
 
-      if (movementType === 'inbound') {
-        const existingIdx = updated.findIndex(
-          (s) => s.product_id === productId && s.warehouse_id === warehouseId
-        );
-        if (existingIdx >= 0) {
-          updated[existingIdx] = {
-            ...updated[existingIdx],
-            quantity: updated[existingIdx].quantity + quantity,
-            updated_at: new Date().toISOString(),
-          };
-        } else {
-          updated.push({
-            id: `stk-${Date.now()}`,
-            product_id: productId,
-            warehouse_id: warehouseId,
-            quantity: quantity,
-            updated_at: new Date().toISOString(),
-          });
+        if (rpcError) {
+          return { success: false, error: rpcError.message };
         }
-      } else if (movementType === 'outbound') {
-        const existingIdx = updated.findIndex(
-          (s) => s.product_id === productId && s.warehouse_id === warehouseId
-        );
-        if (existingIdx >= 0) {
-          updated[existingIdx] = {
-            ...updated[existingIdx],
-            quantity: Math.max(0, updated[existingIdx].quantity - quantity),
-            updated_at: new Date().toISOString(),
-          };
+
+        const newMovementId = rpcData?.movement_id || `mov-${Date.now()}`;
+        const newMovement: StockMovement = {
+          id: newMovementId,
+          product_id: productId,
+          warehouse_id: warehouseId,
+          target_warehouse_id: targetWarehouseId,
+          movement_type: movementType,
+          quantity,
+          user_id: currentUser.id,
+          user_name: currentUser.name,
+          employee_id: currentUser.employee_id || null,
+          device_type: 'web',
+          timestamp: rpcData?.timestamp || new Date().toISOString(),
+          notes: notes || null,
+        };
+
+        setMovements((prev) => [newMovement, ...prev]);
+
+        // Calculate and update local stock balances
+        const newQty = movementType === 'inbound'
+          ? sourceQty + quantity
+          : Math.max(0, sourceQty - quantity);
+
+        setStock((prev) => {
+          let updated = [...prev];
+          const srcIdx = updated.findIndex(s => s.product_id === productId && s.warehouse_id === warehouseId);
+          if (srcIdx >= 0) {
+            updated[srcIdx] = { ...updated[srcIdx], quantity: newQty, updated_at: new Date().toISOString() };
+          } else {
+            updated.push({ id: `stk-${Date.now()}`, product_id: productId, warehouse_id: warehouseId, quantity: newQty, updated_at: new Date().toISOString() });
+          }
+
+          if (movementType === 'transfer' && targetWarehouseId) {
+            const tgtIdx = updated.findIndex(s => s.product_id === productId && s.warehouse_id === targetWarehouseId);
+            if (tgtIdx >= 0) {
+              updated[tgtIdx] = { ...updated[tgtIdx], quantity: updated[tgtIdx].quantity + quantity, updated_at: new Date().toISOString() };
+            } else {
+              updated.push({ id: `stk-${Date.now()}-tgt`, product_id: productId, warehouse_id: targetWarehouseId, quantity: quantity, updated_at: new Date().toISOString() });
+            }
+          }
+          return updated;
+        });
+
+        // Trigger Telegram low-stock alert if remaining stock in warehouse falls below threshold
+        if (movementType === 'outbound' || movementType === 'transfer') {
+          if (newQty <= product.min_stock_level) {
+            fetch('/api/telegram/send-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                product_name: product.name,
+                qr_code_data: product.qr_code_data,
+                warehouse_name: sourceWh.name,
+                current_stock: newQty,
+                min_stock_level: product.min_stock_level,
+                unit: product.unit,
+                movement_type: movementType,
+                quantity,
+                user_name: currentUser.name,
+              }),
+            }).catch(e => console.error('Telegram alert dispatch error:', e));
+          }
         }
-      } else if (movementType === 'transfer' && targetWarehouseId) {
-        // Deduct from source
-        const srcIdx = updated.findIndex(
-          (s) => s.product_id === productId && s.warehouse_id === warehouseId
-        );
-        if (srcIdx >= 0) {
-          updated[srcIdx] = {
-            ...updated[srcIdx],
-            quantity: Math.max(0, updated[srcIdx].quantity - quantity),
-            updated_at: new Date().toISOString(),
-          };
-        }
-        // Increment at target
-        const tgtIdx = updated.findIndex(
-          (s) => s.product_id === productId && s.warehouse_id === targetWarehouseId
-        );
-        if (tgtIdx >= 0) {
-          updated[tgtIdx] = {
-            ...updated[tgtIdx],
-            quantity: updated[tgtIdx].quantity + quantity,
-            updated_at: new Date().toISOString(),
-          };
-        } else {
-          updated.push({
-            id: `stk-${Date.now()}`,
-            product_id: productId,
-            warehouse_id: targetWarehouseId,
-            quantity: quantity,
-            updated_at: new Date().toISOString(),
-          });
-        }
+
+        recordLoginLog('movement_created', {
+          movement_id: newMovement.id,
+          product_name: product.name,
+          warehouse_name: sourceWh.name,
+          type: movementType,
+          quantity,
+        });
+
+        return { success: true, movement: newMovement };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Bazada operatsiyani bajarishda xatolik yuz berdi' };
       }
+    }
 
-      return updated;
-    });
-
+    // Fallback if Supabase not configured
     const newMovement: StockMovement = {
       id: `mov-${Date.now()}`,
       product_id: productId,
@@ -1192,17 +1135,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toISOString(),
       notes: notes || null,
     };
-
-    setMovements((prev) => [newMovement, ...prev]);
-
-    recordLoginLog('movement_created', {
-      movement_id: newMovement.id,
-      product_name: product.name,
-      warehouse_name: sourceWh.name,
-      type: movementType,
-      quantity,
-    });
-
     return { success: true, movement: newMovement };
   };
 
@@ -1469,9 +1401,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!inv) return { success: false, error: 'Invoice not found.' };
     if (inv.status === 'cancelled') return { success: false, error: 'Invoice is already cancelled.' };
 
+    // 1. Restore stock balance for each item in the cancelled invoice
+    setStock((prev) => {
+      let updated = [...prev];
+      inv.items.forEach((item) => {
+        const idx = updated.findIndex(
+          (s) => s.product_id === item.product_id && s.warehouse_id === inv.warehouse_id
+        );
+        if (idx >= 0) {
+          updated[idx] = {
+            ...updated[idx],
+            quantity: updated[idx].quantity + item.quantity,
+            updated_at: new Date().toISOString(),
+          };
+        } else {
+          updated.push({
+            id: `stk-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            product_id: item.product_id,
+            warehouse_id: inv.warehouse_id,
+            quantity: item.quantity,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      });
+      return updated;
+    });
+
+    // 2. Record compensatory inbound stock movements ("Return to Stock")
+    const returnMovements: StockMovement[] = inv.items.map((item) => ({
+      id: `mov-ret-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      product_id: item.product_id,
+      warehouse_id: inv.warehouse_id,
+      target_warehouse_id: null,
+      movement_type: 'inbound',
+      quantity: item.quantity,
+      user_id: currentUser.id,
+      user_name: currentUser.name,
+      employee_id: currentUser.employee_id || null,
+      device_type: 'web',
+      timestamp: new Date().toISOString(),
+      notes: `Qaytarildi (Return from Cancelled Invoice): ${inv.invoice_number}`,
+    }));
+
+    setMovements((prev) => [...returnMovements, ...prev]);
+
+    // 3. Mark invoice as cancelled
     setInvoices((prev) =>
       prev.map((i) => (i.id === invoiceId ? { ...i, status: 'cancelled' } : i))
     );
+
+    recordLoginLog('movement_created', {
+      action: 'invoice_cancelled',
+      invoice_id: invoiceId,
+      invoice_number: inv.invoice_number,
+      returned_items_count: inv.items.length,
+    });
 
     return { success: true };
   };
@@ -1575,12 +1559,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             currentQty -= targetMovement.quantity;
           } else if (targetMovement.movement_type === 'outbound') {
             currentQty += targetMovement.quantity;
+          } else if (targetMovement.movement_type === 'transfer') {
+            currentQty += targetMovement.quantity; // return to source
+            if (targetMovement.target_warehouse_id) {
+              const tgtIdx = updated.findIndex(
+                (s) => s.product_id === targetMovement.product_id && s.warehouse_id === targetMovement.target_warehouse_id
+              );
+              if (tgtIdx >= 0) {
+                updated[tgtIdx] = {
+                  ...updated[tgtIdx],
+                  quantity: Math.max(0, updated[tgtIdx].quantity - targetMovement.quantity),
+                  updated_at: new Date().toISOString(),
+                };
+              }
+            }
           }
+
           // Apply new effect
           if (newType === 'inbound') {
             currentQty += newQty;
           } else if (newType === 'outbound') {
             currentQty = Math.max(0, currentQty - newQty);
+          } else if (newType === 'transfer') {
+            currentQty = Math.max(0, currentQty - newQty); // deduct new qty from source
+            const tgtWh = targetMovement.target_warehouse_id;
+            if (tgtWh) {
+              const tgtIdx = updated.findIndex(
+                (s) => s.product_id === targetMovement.product_id && s.warehouse_id === tgtWh
+              );
+              if (tgtIdx >= 0) {
+                updated[tgtIdx] = {
+                  ...updated[tgtIdx],
+                  quantity: updated[tgtIdx].quantity + newQty,
+                  updated_at: new Date().toISOString(),
+                };
+              } else {
+                updated.push({
+                  id: `stk-${Date.now()}-corr-tgt`,
+                  product_id: targetMovement.product_id,
+                  warehouse_id: tgtWh,
+                  quantity: newQty,
+                  updated_at: new Date().toISOString(),
+                });
+              }
+            }
           }
 
           updated[stockIdx] = {
@@ -1632,14 +1654,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const verifyAdminPin = (pin: string): boolean => {
-    const isMatch = pin.trim() === 'U20020604u';
-    if (isMatch) {
-      setAdminSessionVerified(true);
-      recordLoginLog('admin_access_success', { verified_at: new Date().toISOString() });
-      return true;
-    } else {
-      recordLoginLog('admin_access_failed', { attempted_length: pin.length });
+  const verifyAdminPin = async (pin: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/admin/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: pin.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAdminSessionVerified(true);
+        recordLoginLog('admin_access_success', { verified_at: new Date().toISOString() });
+        return true;
+      } else {
+        recordLoginLog('admin_access_failed', { attempted_length: pin.length });
+        return false;
+      }
+    } catch (err) {
+      recordLoginLog('admin_access_failed', { error: 'Network failure' });
       return false;
     }
   };

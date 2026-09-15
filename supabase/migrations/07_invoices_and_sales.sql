@@ -84,7 +84,7 @@ CREATE POLICY "Staff and Admins can view invoices"
         EXISTS (
             SELECT 1 FROM public.users u
             JOIN public.roles r ON u.role_id = r.id
-            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'warehouse_manager', 'warehouse_staff', 'dispatcher')
         )
     );
 
@@ -98,7 +98,7 @@ CREATE POLICY "Staff and Admins can insert invoices"
         EXISTS (
             SELECT 1 FROM public.users u
             JOIN public.roles r ON u.role_id = r.id
-            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'warehouse_manager', 'warehouse_staff', 'dispatcher')
         )
     );
 
@@ -112,7 +112,7 @@ CREATE POLICY "Staff and Admins can update invoices"
         EXISTS (
             SELECT 1 FROM public.users u
             JOIN public.roles r ON u.role_id = r.id
-            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'warehouse_manager', 'warehouse_staff', 'dispatcher')
         )
     );
 
@@ -126,7 +126,7 @@ CREATE POLICY "Staff and Admins can view invoice items"
         EXISTS (
             SELECT 1 FROM public.users u
             JOIN public.roles r ON u.role_id = r.id
-            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'warehouse_manager', 'warehouse_staff', 'dispatcher')
         )
     );
 
@@ -139,7 +139,7 @@ CREATE POLICY "Staff and Admins can insert invoice items"
         EXISTS (
             SELECT 1 FROM public.users u
             JOIN public.roles r ON u.role_id = r.id
-            WHERE u.id = auth.uid() AND r.name IN ('admin', 'manager', 'warehouse_staff')
+            WHERE u.id = auth.uid() AND r.name IN ('admin', 'warehouse_manager', 'warehouse_staff', 'dispatcher')
         )
     );
 
