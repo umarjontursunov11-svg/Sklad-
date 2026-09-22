@@ -479,6 +479,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch (e) {}
 
+      const userRole = (foundUser?.role || 'warehouse_staff') as UserRole;
+
       // Admin access is verified server-side (middleware reads the Supabase session and DB role).
       // Clear legacy client-set cookies from older versions.
       if (typeof document !== 'undefined') {
