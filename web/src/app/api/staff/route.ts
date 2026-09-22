@@ -3,9 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import { INITIAL_USERS } from '@/lib/mock-data';
+import { authenticateRequest, isAdminRole, sanitizeUser } from '@/lib/server-auth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Service role (secret) key only — never fall back to the public anon key.
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -22,6 +24,9 @@ const supabaseAdmin = isSupabaseConfigured
       },
     })
   : null;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const asUuid = (v: any) => (typeof v === 'string' && UUID_RE.test(v) ? v : null);
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -107,7 +112,7 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ success: true, users });
+    return NextResponse.json({ success: true, users: users.map((u: any) => sanitizeUser(u)) });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err?.message || 'Server error' }, { status: 500 });
   }
@@ -115,11 +120,24 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await authenticateRequest(req);
+    if (!auth.ok) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+    }
+
     const body = await req.json();
     const { action, user, password } = body;
 
     if (!user || !user.email) {
       return NextResponse.json({ success: false, error: 'User email and payload required' }, { status: 400 });
+    }
+
+    const isAdmin = isAdminRole(auth.role);
+    const isSelf = Boolean(auth.userId && user.id === auth.userId);
+
+    // Only an admin may create users; a user may only update their own record.
+    if (action === 'update_user' ? !(isAdmin || isSelf) : !isAdmin) {
+      return NextResponse.json({ success: false, error: "Ruxsat yo'q." }, { status: 403 });
     }
 
     let authUserId = user.id;
@@ -132,14 +150,20 @@ export async function POST(req: NextRequest) {
           }).eq('id', user.id);
         } catch (e) {}
       }
-      writeStoreUser(user);
-      return NextResponse.json({ success: true, user });
+      // Non-admins cannot change their own role or warehouse through this route.
+      const safeUser = isAdmin ? user : { id: user.id, email: user.email, must_change_password: user.must_change_password ?? false };
+      writeStoreUser(sanitizeUser(safeUser));
+      return NextResponse.json({ success: true, user: sanitizeUser(safeUser) });
+    }
+
+    const rawPassword = String(password || '');
+    if (rawPassword.length < 8) {
+      return NextResponse.json({ success: false, error: "Parol kamida 8 belgidan iborat bo'lishi kerak." }, { status: 400 });
     }
 
     // 1. Create real Auth user in auth.users using Supabase Auth Admin API
     if (supabaseAdmin) {
       try {
-        const rawPassword = password || user.password || 'StaffPass123!';
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: user.email,
           password: rawPassword,
@@ -177,8 +201,9 @@ export async function POST(req: NextRequest) {
           email: user.email,
           phone: user.phone || null,
           employee_id: user.employee_id || null,
-          role_id: user.role_id || '33333333-3333-3333-3333-333333333333',
-          assigned_warehouse_id: user.assigned_warehouse_id || null,
+          role_id: asUuid(user.role_id) || '33333333-3333-3333-3333-333333333333',
+          // The web app uses local ids like 'wh-main'; only real UUIDs fit this column.
+          assigned_warehouse_id: asUuid(user.assigned_warehouse_id),
           must_change_password: user.must_change_password ?? true,
         });
       } catch (sbErr: any) {
@@ -186,9 +211,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const finalUser = { ...user, id: authUserId };
+    const finalUser = sanitizeUser({ ...user, id: authUserId });
 
-    // 3. Fallback write to central file store
+    // 3. Fallback write to central file store (no password or hash is stored on the server)
     writeStoreUser(finalUser);
 
     return NextResponse.json({ success: true, user: finalUser });

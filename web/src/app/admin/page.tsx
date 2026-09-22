@@ -65,12 +65,12 @@ export default function AdminPage() {
     );
   }
 
-  // If admin session is not verified, require Admin Password (U20020604u)
+  // If admin session is not verified, the admin re-enters their own account password
   if (!adminSessionVerified) {
-    const handleVerify = (e: React.FormEvent) => {
+    const handleVerify = async (e: React.FormEvent) => {
       e.preventDefault();
       setPinError(null);
-      const isOk = verifyAdminPin(pinInput);
+      const isOk = await verifyAdminPin(pinInput);
       if (!isOk) {
         setPinError(t.invalidPin || "PIN kod noto'g'ri! Urinish xavfsizlik jurnaliga qayd etildi.");
       } else {

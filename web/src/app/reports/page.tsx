@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
 import { useApp } from '../../lib/store';
 import { useI18n } from '../../lib/i18n';
+import { authJsonHeaders } from '../../lib/supabase/client';
 import {
   FileSpreadsheet,
   Download,
@@ -541,7 +542,7 @@ export default function ReportsPage() {
 
       const res = await fetch('/api/telegram/send-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authJsonHeaders(),
         body: JSON.stringify({ reportData }),
       });
 

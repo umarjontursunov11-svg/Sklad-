@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
+import { authenticateRequest } from '@/lib/server-auth';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -16,10 +17,21 @@ function readStoreData() {
   return null;
 }
 
-const DEFAULT_BOT_TOKEN = '8796402233:AAHkcD3lE1piqcC3yOWgTRUIXWJhtaSQ8qQ';
-const DEFAULT_CHAT_ID = '-1003964640399';
+// Telegram credentials come ONLY from environment variables (never hard-code them).
+const DEFAULT_BOT_TOKEN = '';
+const DEFAULT_CHAT_ID = '';
+
+// Vercel Cron sends "Authorization: Bearer <CRON_SECRET>" when CRON_SECRET is set.
+function isAuthorizedCron(request: Request) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return process.env.NODE_ENV !== 'production';
+  return request.headers.get('authorization') === `Bearer ${secret}`;
+}
 
 export async function GET(request: Request) {
+  if (!isAuthorizedCron(request)) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID || DEFAULT_CHAT_ID;
@@ -127,6 +139,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Manual send from the Reports page: only a signed-in staff member may trigger it.
+  const auth = await authenticateRequest(request);
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
   try {
     const body = await request.json().catch(() => ({}));
     const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_BOT_TOKEN;

@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import QRCode from 'qrcode';
 import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog, UserRole } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
-import { supabase, isSupabaseConfigured } from './supabase/client';
+import { supabase, isSupabaseConfigured, authJsonHeaders } from './supabase/client';
 
 // SHA-256 hash utility (sync version using SubtleCrypto workaround)
 export async function hashPassword(password: string): Promise<string> {
@@ -141,7 +141,7 @@ interface AppContextType {
     status: 'approved' | 'rejected';
     reviewNotes?: string;
   }) => { success: boolean; error?: string };
-  verifyAdminPin: (pin: string) => boolean;
+  verifyAdminPin: (pin: string) => Promise<boolean>;
   recordLoginLog: (eventType: LoginLog['event_type'], details?: Record<string, any>) => void;
   findProductByQR: (qrData: string) => ProductWithStock | undefined;
 }
@@ -468,21 +468,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         if (authError) {
-          // If Supabase Auth fails, check if local fallback user exists (for local admin accounts)
-          const isAdminUser = foundUser && (foundUser.role === 'admin' || foundUser.id === 'usr-admin' || foundUser.username === 'admin');
-          const isKnownAdminPass = isAdminUser && (
-            cleanPassword === 'U20020604u' ||
-            cleanPassword === 'admin' ||
-            cleanPassword === 'admin123' ||
-            cleanPassword === '123456'
-          );
-
-          if (!isKnownAdminPass) {
-            return { success: false, error: authError.message || "Login yoki parol noto'g'ri!" };
-          }
+          // No hard-coded fallback passwords: Supabase Auth is the only source of truth.
+          return { success: false, error: "Login yoki parol noto'g'ri!" };
+        }
+        if (!authData?.user) {
+          return { success: false, error: "Login yoki parol noto'g'ri!" };
         }
 
-        const activeId = authData?.user?.id || foundUser?.id || 'usr-admin';
+        const activeId = authData.user.id;
         setAuthenticatedUserId(activeId);
         setCurrentUserIdState(activeId);
         if (foundUser?.assigned_warehouse_id) {
@@ -501,15 +494,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const inputHash = await hashPassword(cleanPassword);
-    const isAdminUser = user.role === 'admin' || user.id === 'usr-admin' || user.username === 'admin';
-    const isKnownAdminPass = isAdminUser && (
-      cleanPassword === 'U20020604u' ||
-      cleanPassword === 'admin' ||
-      cleanPassword === 'admin123' ||
-      cleanPassword === '123456'
-    );
-
-    if (user.password_hash && inputHash !== user.password_hash && !isKnownAdminPass) {
+    // A user without a stored password hash can never log in (previously any password was accepted).
+    if (!user.password_hash || inputHash !== user.password_hash) {
       return { success: false, error: "Parol noto'g'ri!" };
     }
 
@@ -614,11 +600,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (updatedRecord) {
-      fetch('/api/staff', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update_user', user: updatedRecord }),
-      }).catch(() => {});
+      const record = updatedRecord;
+      authJsonHeaders()
+        .then((headers) =>
+          fetch('/api/staff', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: 'update_user', user: record }),
+          })
+        )
+        .catch(() => {});
     }
 
     const log: LoginLog = {
@@ -709,8 +700,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (trimmedUsername.length < 3) {
       return { success: false, error: "Login kamida 3 ta belgidan iborat bo'lishi kerak!" };
     }
-    if (!data.password || data.password.length < 4) {
-      return { success: false, error: "Parol kamida 4 ta belgidan iborat bo'lishi kerak!" };
+    if (!data.password || data.password.length < 8) {
+      return { success: false, error: "Parol kamida 8 ta belgidan iborat bo'lishi kerak!" };
     }
     if (!trimmedEmail) {
       return { success: false, error: 'Elektron pochta manzili kiritilishi shart!' };
@@ -774,11 +765,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updated = [...prev, newUser];
       if (typeof window !== 'undefined') {
         try {
-          fetch('/api/staff', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'register_user', user: newUser, password: data.password }),
-          })
+          authJsonHeaders()
+            .then((headers) =>
+              fetch('/api/staff', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ action: 'register_user', user: newUser, password: data.password }),
+              })
+            )
             .then(res => res.json())
             .then(resData => {
               if (resData?.user?.id) {
@@ -1632,8 +1626,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const verifyAdminPin = (pin: string): boolean => {
-    const isMatch = pin.trim() === 'U20020604u';
+  // Admin re-verification: the admin re-enters their OWN account password.
+  // Nothing secret is embedded in the browser bundle.
+  const verifyAdminPin = async (pin: string): Promise<boolean> => {
+    const candidate = (pin || '').trim();
+    let isMatch = false;
+    if (candidate && authenticatedUser && authenticatedUser.role === 'admin') {
+      if (isSupabaseConfigured && supabase) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authenticatedUser.email,
+          password: candidate,
+        });
+        isMatch = !error;
+      } else if (authenticatedUser.password_hash) {
+        isMatch = (await hashPassword(candidate)) === authenticatedUser.password_hash;
+      }
+    }
     if (isMatch) {
       setAdminSessionVerified(true);
       recordLoginLog('admin_access_success', { verified_at: new Date().toISOString() });

@@ -2,6 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from '@/lib/mock-data';
+import { authenticateRequest, isAdminRole, sanitizeUser } from '@/lib/server-auth';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
@@ -42,7 +43,8 @@ function writeStore(data: any) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    const safe = { ...data, users: Array.isArray(data.users) ? data.users.map((u: any) => sanitizeUser(u)) : data.users };
+    fs.writeFileSync(DATA_FILE, JSON.stringify(safe, null, 2), 'utf8');
   } catch (e) {
     console.error('Error writing store.json:', e);
   }
@@ -50,11 +52,22 @@ function writeStore(data: any) {
 
 export async function GET() {
   const store = readStore();
-  return NextResponse.json(store);
+  // Never send password hashes to the browser.
+  const users = Array.isArray(store.users) ? store.users.map((u: any) => sanitizeUser(u)) : [];
+  return NextResponse.json({ ...store, users });
 }
 
 export async function POST(req: NextRequest) {
   try {
+    // Writing to the central store replaces users and business data: admins only.
+    const auth = await authenticateRequest(req);
+    if (!auth.ok) {
+      return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+    }
+    if (!isAdminRole(auth.role)) {
+      return NextResponse.json({ success: false, error: "Ruxsat yo'q." }, { status: 403 });
+    }
+
     const body = await req.json();
     const store = readStore();
 
@@ -67,14 +80,14 @@ export async function POST(req: NextRequest) {
       }
       store.updatedAt = new Date().toISOString();
       writeStore(store);
-      return NextResponse.json({ success: true, store });
+      return NextResponse.json({ success: true, updatedAt: store.updatedAt });
     }
 
     if (body.action === 'update_user' && body.user) {
       store.users = store.users.map((u: any) => u.id === body.user.id ? body.user : u);
       store.updatedAt = new Date().toISOString();
       writeStore(store);
-      return NextResponse.json({ success: true, store });
+      return NextResponse.json({ success: true, updatedAt: store.updatedAt });
     }
 
     if (body.action === 'sync_all' && body.data) {
@@ -87,7 +100,7 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(body.data.loginLogs)) store.loginLogs = body.data.loginLogs;
       store.updatedAt = new Date().toISOString();
       writeStore(store);
-      return NextResponse.json({ success: true, store });
+      return NextResponse.json({ success: true, updatedAt: store.updatedAt });
     }
 
     if (Array.isArray(body.users)) {
@@ -100,10 +113,10 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(body.loginLogs)) store.loginLogs = body.loginLogs;
       store.updatedAt = new Date().toISOString();
       writeStore(store);
-      return NextResponse.json({ success: true, store });
+      return NextResponse.json({ success: true, updatedAt: store.updatedAt });
     }
 
-    return NextResponse.json({ success: true, store });
+    return NextResponse.json({ success: true, updatedAt: store.updatedAt });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e.message }, { status: 500 });
   }
