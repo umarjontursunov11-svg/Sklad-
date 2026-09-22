@@ -95,3 +95,57 @@ body {
     border: none !important;
   }
 }
+
+
+/* ==========================================================================
+   Phone & tablet layout (below the desktop sidebar breakpoint)
+   ========================================================================== */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 1023px) {
+  /* Modals: scroll inside the screen instead of being cut off; centred when short. */
+  .fixed.inset-0.z-50:not(.overflow-hidden) {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    align-items: flex-start;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .fixed.inset-0.z-50:not(.overflow-hidden) > .relative,
+  .fixed.inset-0.z-50:not(.overflow-hidden) > .w-full {
+    margin-top: auto;
+    margin-bottom: auto;
+  }
+
+  /* Wide tables scroll sideways smoothly. */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 640px) {
+  /* iPhone zooms into any field with text smaller than 16px — prevent that. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Tighter padding inside modal cards on small screens. */
+  .fixed.inset-0.z-50 > .p-6,
+  .fixed.inset-0.z-50 > .relative.p-6 {
+    padding: 1rem;
+  }
+
+  /* Page titles a little smaller. */
+  main h1.text-2xl,
+  main h2.text-2xl {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+}

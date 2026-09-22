@@ -60,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
   const currentLangObj = languages.find((l) => l.code === language) || languages[0];
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 sm:px-6 glass-panel border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-3 sm:px-6 glass-panel border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
       {/* Left: Brand & Warehouse Filter */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2.5">
@@ -70,11 +70,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
           <div>
             <h1 className="text-sm font-black tracking-wider text-white uppercase flex items-center gap-1.5">
               {t.brandTitle}{' '}
-              <span className="text-[10px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-400 rounded-md font-mono border border-indigo-500/30">
+              <span className="hidden sm:inline text-[10px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-400 rounded-md font-mono border border-indigo-500/30">
                 PRO
               </span>
             </h1>
-            <span className="text-[10px] text-slate-400 block -mt-0.5">{t.brandSubtitle}</span>
+            <span className="text-[10px] text-slate-400 hidden sm:block -mt-0.5">{t.brandSubtitle}</span>
           </div>
         </div>
 
@@ -97,11 +97,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
       </div>
 
       {/* Right Action Bar */}
-      <div className="flex items-center gap-2.5 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Instant QR Camera Scanner Button */}
         <button
           onClick={onOpenScanner}
-          className="flex items-center gap-2 px-3 sm:px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all transform hover:scale-[1.02]"
+          className="hidden lg:flex items-center gap-2 px-3 sm:px-3.5 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all transform hover:scale-[1.02]"
         >
           <QrCode className="w-4 h-4" />
           <span className="hidden sm:inline">{t.scanQrBtn}</span>
@@ -162,7 +162,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenScanner }) => {
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-88 sm:w-96 p-3 rounded-2xl glass-panel border border-white/10 shadow-2xl z-50 animate-fadeIn">
+            <div className="fixed left-3 right-3 top-16 max-h-[75vh] overflow-y-auto sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:max-h-none sm:overflow-visible mt-2 sm:w-96 p-3 rounded-2xl glass-panel border border-white/10 shadow-2xl z-50 animate-fadeIn">
               <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-2.5">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
                   <Bell className="w-3.5 h-3.5 text-indigo-400" />

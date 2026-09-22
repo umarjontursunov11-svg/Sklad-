@@ -29,7 +29,7 @@ const ALL = ['admin', 'warehouse_manager', 'warehouse_staff', 'receiver', 'dispa
  */
 export const MobileNav: React.FC<{ onOpenScanner: () => void }> = ({ onOpenScanner }) => {
   const pathname = usePathname();
-  const { currentUser, lowStockItems } = useApp();
+  const { currentUser, lowStockItems, warehouses, currentWarehouse, setCurrentWarehouseId } = useApp();
   const { t } = useI18n();
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -122,6 +122,21 @@ export const MobileNav: React.FC<{ onOpenScanner: () => void }> = ({ onOpenScann
                 <X className="w-5 h-5" />
               </button>
             </div>
+            <label className="block mb-3">
+              <span className="block text-[11px] font-semibold text-slate-400 mb-1">Ombor</span>
+              <select
+                value={currentWarehouse ? currentWarehouse.id : ''}
+                onChange={(e) => setCurrentWarehouseId(e.target.value || null)}
+                className="w-full px-3 py-2.5 bg-slate-900 text-slate-100 border border-white/10 rounded-xl"
+              >
+                <option value="">{t.allWarehouses}</option>
+                {warehouses.map((wh) => (
+                  <option key={wh.id} value={wh.id}>
+                    {wh.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="grid grid-cols-3 gap-2">
               {items.map((item) => {
                 const Icon = item.icon;
