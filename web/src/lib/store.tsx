@@ -1076,10 +1076,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Real Supabase RPC invocation
-    if (isSupabaseConfigured && supabase) {
+    // Real Supabase RPC invocation — only for records that exist in the database (UUID ids).
+    // Products/warehouses still kept in the browser use local ids (e.g. 'wh-main'); sending them
+    // to the RPC fails with "invalid input syntax for type uuid", so they use the local path below.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const idsInDatabase =
+      UUID_RE.test(productId) &&
+      UUID_RE.test(warehouseId) &&
+      (!targetWarehouseId || UUID_RE.test(targetWarehouseId));
+    // Local stock check (the database function checks again for DB records).
+    if ((movementType === 'outbound' || movementType === 'transfer') && sourceQty < quantity) {
+      return {
+        success: false,
+        error: `Omborda yetarli emas: ${product.name} — mavjud ${sourceQty} ${product.unit}, so'ralgan ${quantity} ${product.unit}`,
+      };
+    }
+
+    {
       try {
-        const { data: rpcData, error: rpcError } = await (supabase as any).rpc('execute_stock_movement', {
+        let rpcData: any = null;
+        if (isSupabaseConfigured && supabase && idsInDatabase) {
+        const { data: rpcResult, error: rpcError } = await (supabase as any).rpc('execute_stock_movement', {
           p_product_id: productId,
           p_warehouse_id: warehouseId,
           p_movement_type: movementType,
@@ -1091,6 +1108,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         if (rpcError) {
           return { success: false, error: rpcError.message };
+        }
+        rpcData = rpcResult;
         }
 
         const newMovementId = rpcData?.movement_id || `mov-${Date.now()}`;
@@ -1170,22 +1189,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // Fallback if Supabase not configured
-    const newMovement: StockMovement = {
-      id: `mov-${Date.now()}`,
-      product_id: productId,
-      warehouse_id: warehouseId,
-      target_warehouse_id: targetWarehouseId,
-      movement_type: movementType,
-      quantity,
-      user_id: currentUser.id,
-      user_name: currentUser.name,
-      employee_id: currentUser.employee_id || null,
-      device_type: 'web',
-      timestamp: new Date().toISOString(),
-      notes: notes || null,
-    };
-    return { success: true, movement: newMovement };
   };
 
   const adjustStockBalance = (params: {

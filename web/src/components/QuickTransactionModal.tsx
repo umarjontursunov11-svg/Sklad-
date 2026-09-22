@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { ProductSearchSelect } from './ProductSearchSelect';
 import confetti from 'canvas-confetti';
 import { ProductWithStock, MovementType, InvoiceWithItems } from '../lib/types';
 import { useApp } from '../lib/store';
@@ -21,6 +22,8 @@ import {
   Printer,
   Download,
   ExternalLink,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 interface QuickTransactionModalProps {
@@ -32,7 +35,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   product,
   onClose,
 }) => {
-  const { warehouses, currentWarehouse, movements, executeMovement, createSaleInvoice, currentUser, users } = useApp();
+  const { warehouses, currentWarehouse, movements, executeMovement, createSaleInvoice, currentUser, users, productsWithStock } = useApp();
   const { t } = useI18n();
 
   // Role-based initial movement type
@@ -82,7 +85,39 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Additional products in the same operation ("+ Yana tovar qo'shish")
+  const [extraItems, setExtraItems] = useState<{ productId: string; quantity: number; unitPrice: number }[]>([]);
+
+  const extraOptions = useMemo(
+    () =>
+      productsWithStock
+        .filter((p) => p.id !== product?.id)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          code: p.qr_code_data,
+          hint: `${p.warehouse_stock[selectedWarehouseId] ?? 0} ${p.unit}`,
+        })),
+    [productsWithStock, product?.id, selectedWarehouseId]
+  );
+
+  const addExtraItem = () =>
+    setExtraItems((prev) => [...prev, { productId: '', quantity: 1, unitPrice: 0 }]);
+  const updateExtraItem = (idx: number, patch: Partial<{ productId: string; quantity: number; unitPrice: number }>) =>
+    setExtraItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const removeExtraItem = (idx: number) => setExtraItems((prev) => prev.filter((_, i) => i !== idx));
+
   if (!product) return null;
+
+  // All lines of this operation: the scanned product first, then the added ones.
+  type Line = { product: ProductWithStock; quantity: number; unitPrice: number };
+  const allLines: Line[] = [{ product, quantity: Number(quantity), unitPrice: Number(unitPrice) }];
+  extraItems.forEach((it) => {
+    const p = productsWithStock.find((x) => x.id === it.productId);
+    if (p) allLines.push({ product: p, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice) });
+  });
+  const invoiceTotal = allLines.reduce((sum, l) => sum + l.quantity * l.unitPrice, 0);
+  const multi = allLines.length > 1;
 
   // Restricted scan view: Receiver and Dispatcher only see their own movement history
   const isIndividualStaff = currentUser.role === 'receiver' || currentUser.role === 'dispatcher';
@@ -98,6 +133,30 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
     setCreatedInvoice(null);
+
+    if (extraItems.some((it) => !it.productId)) {
+      setErrorMsg("Qo'shilgan qatorlarning har birida tovarni tanlang yoki qatorni o'chiring");
+      return;
+    }
+    if (allLines.some((l) => !(l.quantity > 0))) {
+      setErrorMsg("Har bir tovar miqdori 0 dan katta bo'lishi kerak");
+      return;
+    }
+
+    // Check stock for every line before changing anything (chiqim / ko'chirish).
+    if (movementType !== 'inbound') {
+      const need: Record<string, number> = {};
+      allLines.forEach((l) => {
+        need[l.product.id] = (need[l.product.id] || 0) + l.quantity;
+      });
+      for (const l of allLines) {
+        const available = l.product.warehouse_stock[selectedWarehouseId] ?? 0;
+        if (need[l.product.id] > available) {
+          setErrorMsg(`"${l.product.name}" yetarli emas: omborda ${available} ${l.product.unit}, so'ralgan ${need[l.product.id]} ${l.product.unit}`);
+          return;
+        }
+      }
+    }
 
     if (movementType === 'outbound' && isSale) {
       if (!customerName.trim()) {
@@ -117,13 +176,11 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
         notes: notes.trim() || null,
         creatorName: staffName.trim() || currentUser.name,
         createdBy: currentUser.id,
-        items: [
-          {
-            productId: product.id,
-            quantity: Number(quantity),
-            unitPrice: Number(unitPrice),
-          },
-        ],
+        items: allLines.map((l) => ({
+          productId: l.product.id,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+        })),
       });
 
       if (!res.success || !res.invoice) {
@@ -140,23 +197,39 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
       } catch (e) {}
 
       setCreatedInvoice(res.invoice);
-      setSuccessMsg(`Sotuv rasmiylashtirildi! Hujjat: ${res.invoice.invoice_number}`);
+      setSuccessMsg(`Sotuv rasmiylashtirildi! Hujjat: ${res.invoice.invoice_number} (${allLines.length} ta tovar)`);
       setNotes('');
+      setExtraItems([]);
       return;
     }
 
-    const result = await executeMovement({
-      productId: product.id,
-      warehouseId: selectedWarehouseId,
-      targetWarehouseId: movementType === 'transfer' ? targetWarehouseId : null,
-      movementType,
-      quantity: Number(quantity),
-      notes,
+    // Same product added twice → one movement with the summed quantity.
+    const merged: Line[] = [];
+    allLines.forEach((l) => {
+      const existing = merged.find((m) => m.product.id === l.product.id);
+      if (existing) existing.quantity += l.quantity;
+      else merged.push({ ...l });
     });
 
-    if (!result.success) {
-      setErrorMsg(result.error || 'Transaction failed');
-      return;
+    let done = 0;
+    for (const line of merged) {
+      const result = await executeMovement({
+        productId: line.product.id,
+        warehouseId: selectedWarehouseId,
+        targetWarehouseId: movementType === 'transfer' ? targetWarehouseId : null,
+        movementType,
+        quantity: line.quantity,
+        notes,
+      });
+      if (!result.success) {
+        setErrorMsg(
+          `"${line.product.name}": ${result.error || 'Transaction failed'}` +
+            (done > 0 ? ` (oldingi ${done} ta tovar bajarildi)` : '')
+        );
+        if (done > 0) setExtraItems([]);
+        return;
+      }
+      done++;
     }
 
     try {
@@ -167,8 +240,9 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
       });
     } catch (e) {}
 
-    const actionText =
-      movementType === 'inbound'
+    const actionText = multi
+      ? `${movementType === 'inbound' ? t.confirmStockIn : movementType === 'outbound' ? t.confirmStockOut : t.confirmTransfer} — ${allLines.length} ta tovar`
+      : movementType === 'inbound'
         ? `${t.confirmStockIn} (+${quantity} ${product.unit})`
         : movementType === 'outbound'
         ? `${t.confirmStockOut} (-${quantity} ${product.unit})`
@@ -176,6 +250,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
 
     setSuccessMsg(actionText);
     setNotes('');
+    setExtraItems([]);
     setTimeout(() => {
       setSuccessMsg(null);
     }, 4000);
@@ -389,6 +464,65 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
               )}
             </div>
 
+            {/* Additional products in the same operation */}
+            <div className="space-y-2">
+              {extraItems.map((it, idx) => {
+                const p = productsWithStock.find((x) => x.id === it.productId);
+                return (
+                  <div key={idx} className="p-2.5 rounded-xl bg-slate-900/60 border border-white/10 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-500 w-5 shrink-0">{idx + 2}.</span>
+                      <ProductSearchSelect
+                        className="flex-1 min-w-0"
+                        options={extraOptions}
+                        value={it.productId}
+                        onChange={(id) => updateExtraItem(idx, { productId: id })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeExtraItem(idx)}
+                        className="p-1.5 text-rose-400 hover:text-rose-300 rounded-lg hover:bg-rose-500/10 shrink-0"
+                        aria-label="Qatorni o'chirish"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 pl-7">
+                      <input
+                        type="number"
+                        min="1"
+                        value={it.quantity}
+                        onChange={(e) => updateExtraItem(idx, { quantity: Math.max(1, Number(e.target.value)) })}
+                        className="w-24 px-2.5 py-1.5 text-xs bg-slate-900 border border-white/10 rounded-lg text-white font-bold focus:outline-none focus:border-indigo-500"
+                      />
+                      <span className="text-[11px] text-slate-400">{p ? p.unit : ''}</span>
+                      {movementType === 'outbound' && isSale && (
+                        <>
+                          <input
+                            type="number"
+                            min="0"
+                            step="500"
+                            value={it.unitPrice}
+                            onChange={(e) => updateExtraItem(idx, { unitPrice: Math.max(0, Number(e.target.value)) })}
+                            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-slate-900 border border-white/10 rounded-lg text-emerald-400 font-bold focus:outline-none focus:border-indigo-500"
+                            placeholder="Narx (so'm)"
+                          />
+                          <span className="text-[11px] text-slate-400 shrink-0">so'm</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addExtraItem}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-dashed border-indigo-500/40 rounded-xl"
+              >
+                <Plus className="w-4 h-4" /> Yana tovar qo'shish
+              </button>
+            </div>
+
             <div>
               <input
                 type="text"
@@ -508,7 +642,7 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
                     <div className="flex items-center justify-between px-3 py-2 bg-slate-900/80 rounded-lg border border-white/5 text-xs">
                       <span className="text-slate-400">Jami hisob-faktura summasi:</span>
                       <span className="font-bold text-white text-sm text-emerald-400">
-                        {new Intl.NumberFormat('uz-UZ').format(quantity * unitPrice)} so'm
+                        {new Intl.NumberFormat('uz-UZ').format(invoiceTotal)} so'm
                       </span>
                     </div>
                   </div>
@@ -578,12 +712,12 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
               }`}
             >
               {movementType === 'inbound'
-                ? `${t.confirmStockIn} (+${quantity} ${product.unit})`
+                ? `${t.confirmStockIn} (${multi ? `${allLines.length} ta tovar` : `+${quantity} ${product.unit}`})`
                 : movementType === 'outbound'
                 ? isSale
-                  ? `Sotuvni tasdiqlash va Faktura chiqarish (${new Intl.NumberFormat('uz-UZ').format(quantity * unitPrice)} so'm)`
-                  : `${t.confirmStockOut} (-${quantity} ${product.unit})`
-                : `${t.confirmTransfer} (${quantity} ${product.unit})`}
+                  ? `Sotuvni tasdiqlash va Faktura chiqarish (${new Intl.NumberFormat('uz-UZ').format(invoiceTotal)} so'm)`
+                  : `${t.confirmStockOut} (${multi ? `${allLines.length} ta tovar` : `-${quantity} ${product.unit}`})`
+                : `${t.confirmTransfer} (${multi ? `${allLines.length} ta tovar` : `${quantity} ${product.unit}`})`}
             </button>
           </form>
         </div>
