@@ -7,6 +7,34 @@ import { ensureRobotoFonts } from '../lib/pdf-fonts';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
 import { printViaIframe, escapeHtml } from '../lib/print-utils';
+
+// High-resolution, pure-black QR codes scan reliably on 203/300 dpi thermal printers.
+const QR_OPTIONS = {
+  width: 400,
+  margin: 1,
+  errorCorrectionLevel: 'M' as const,
+  color: { dark: '#000000', light: '#ffffff' },
+};
+
+// Makes sure every selected product has a QR image before printing/exporting
+// (printing could previously start while background generation was still running,
+// which produced labels without QR codes).
+async function ensureQrImages(
+  list: ProductWithStock[],
+  current: { [id: string]: string }
+): Promise<{ [id: string]: string }> {
+  const map = { ...current };
+  for (const item of list) {
+    if (!map[item.id]) {
+      try {
+        map[item.id] = await QRCode.toDataURL(item.qr_code_data || item.id || 'WMS-QR', QR_OPTIONS);
+      } catch (e) {
+        console.error(`Failed to generate QR for product ${item.name}:`, e);
+      }
+    }
+  }
+  return map;
+}
 import {
   Printer,
   Download,
@@ -46,7 +74,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
   const [labelsPerRow, setLabelsPerRow] = useState<number>(3);
 
   const [selectedList, setSelectedList] = useState<ProductWithStock[]>([]);
-  const [qrMap, setQrMap] = useState<{ [id: string]: string }>({});
+  const [qrMapState, setQrMap] = useState<{ [id: string]: string }>({});
   
   // Progress and Error State
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -100,12 +128,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
             chunk.map(async (item) => {
               try {
                 const qrText = item.qr_code_data || item.id || 'WMS-QR';
-                const url = await QRCode.toDataURL(qrText, {
-                  width: 180,
-                  margin: 1,
-                  errorCorrectionLevel: 'L',
-                  color: { dark: '#000000', light: '#ffffff' },
-                });
+                const url = await QRCode.toDataURL(qrText, QR_OPTIONS);
                 map[item.id] = url;
               } catch (e) {
                 console.error(`Failed to generate QR for product ${item.name}:`, e);
@@ -152,6 +175,8 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
     setProgressLabel("PDF hujjat shakllantirilmoqda...");
 
     try {
+      const qrMap = await ensureQrImages(selectedList, qrMapState);
+      setQrMap(qrMap);
       if (printMode === 'thermal') {
         // Continuous label PDF
         const orientation = labelWidth >= labelHeight ? 'landscape' : 'portrait';
@@ -160,6 +185,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           unit: 'mm',
           format: [labelWidth, labelHeight],
         });
+        ensureRobotoFonts(doc);
 
         const chunkSize = 15;
         for (let i = 0; i < selectedList.length; i++) {
@@ -331,6 +357,8 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
     setProgressLabel("Chop etish darchasi tayyorlanmoqda...");
 
     try {
+      const qrMap = await ensureQrImages(selectedList, qrMapState);
+      setQrMap(qrMap);
       if (printMode === 'thermal') {
         let stickersHtml = '';
         const chunkSize = 25;
@@ -407,6 +435,10 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
                 overflow: hidden;
                 box-sizing: border-box;
                 border: none;
+              }
+              .thermal-sticker:last-child {
+                page-break-after: auto;
+                break-after: auto;
               }
               .qr-container {
                 height: 100%;
@@ -895,9 +927,9 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
                   >
                     {/* QR Code Container */}
                     <div className="flex-shrink-0 h-full flex items-center justify-center">
-                      {qrMap[item.id] ? (
+                      {qrMapState[item.id] ? (
                         <img
-                          src={qrMap[item.id]}
+                          src={qrMapState[item.id]}
                           alt={item.name}
                           className="h-full max-h-[88%] w-auto aspect-square object-contain"
                         />
@@ -962,9 +994,9 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
                   className="qr-label-card relative flex items-center gap-3 p-3.5 bg-white text-slate-900 rounded-xl shadow-md border border-slate-200"
                 >
                   <div className="flex-shrink-0 w-20 h-20 bg-slate-50 rounded-lg p-1 border border-slate-100 flex items-center justify-center">
-                    {qrMap[item.id] ? (
+                    {qrMapState[item.id] ? (
                       <img
-                        src={qrMap[item.id]}
+                        src={qrMapState[item.id]}
                         alt={item.name}
                         className="w-full h-full object-contain"
                       />

@@ -25,8 +25,9 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
       QRCode.toDataURL(product.qr_code_data, {
         width: 600,
         margin: 2,
+        errorCorrectionLevel: 'M',
         color: {
-          dark: '#0f172a',
+          dark: '#000000',
           light: '#ffffff',
         },
       }).then((url) => {

@@ -15,21 +15,31 @@ export const printViaIframe = (htmlContent: string): Promise<void> => {
     iframe = document.createElement('iframe');
     iframe.id = iframeId;
     // Set position as fixed 0x0 size at bottom corner with visibility hidden to allow print engine to work reliably across browsers without display bugs
+    // Off-screen but with a real size: 0x0 / hidden frames print blank pages in some browsers.
     iframe.setAttribute(
       'style',
-      'position: fixed; bottom: 0; right: 0; width: 0; height: 0; border: none; z-index: -1; visibility: hidden;'
+      'position: fixed; left: -10000px; top: 0; width: 800px; height: 600px; border: none; opacity: 0; pointer-events: none;'
     );
     document.body.appendChild(iframe);
 
+    let cleaned = false;
+    const removeFrame = () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (iframe && iframe.parentNode) {
+        try {
+          iframe.parentNode.removeChild(iframe);
+        } catch (e) {}
+      }
+      resolve();
+    };
+    // Remove the frame only after the print dialog is closed. Some browsers return from
+    // print() immediately, and removing the frame early cancels the print job.
     const cleanup = () => {
-      setTimeout(() => {
-        if (iframe && iframe.parentNode) {
-          try {
-            iframe.parentNode.removeChild(iframe);
-          } catch (e) {}
-        }
-        resolve();
-      }, 500);
+      try {
+        iframe?.contentWindow?.addEventListener('afterprint', () => setTimeout(removeFrame, 500));
+      } catch (e) {}
+      setTimeout(removeFrame, 60000);
     };
 
     const doc = iframe.contentWindow?.document;
