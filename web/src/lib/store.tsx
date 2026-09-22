@@ -185,13 +185,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const loadInitialData = async () => {
           try {
-            const res = await fetch('/api/sync');
+            // The central store is only served to signed-in staff.
+            const res = await fetch('/api/sync', { headers: await authJsonHeaders() });
             if (res.ok) {
               const serverData = await res.json();
               if (Array.isArray(serverData.users) && serverData.users.length > 0) {
                 const sanitized = serverData.users.map((u: UserProfile) => ({
                   ...u,
-                  password_hash: u.password_hash || '4f25be58d1a252a1c039b97353e6880e58bf592ed52c0e852383169c3b4c8f0f',
+                  password_hash: u.password_hash || '',
                 }));
                 setUsers(sanitized);
                 localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(sanitized));
@@ -359,10 +360,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (session?.user) {
           setAuthenticatedUserId(session.user.id);
           setCurrentUserIdState(session.user.id);
-          const role = session.user.user_metadata?.role;
-          if (role) {
-            document.cookie = `wms_user_role=${role}; path=/; max-age=86400; SameSite=Lax`;
-          }
         }
       });
 
@@ -370,10 +367,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (session?.user) {
           setAuthenticatedUserId(session.user.id);
           setCurrentUserIdState(session.user.id);
-          const role = session.user.user_metadata?.role;
-          if (role) {
-            document.cookie = `wms_user_role=${role}; path=/; max-age=86400; SameSite=Lax`;
-          }
         } else if (event === 'SIGNED_OUT') {
           setAuthenticatedUserId(null);
           setAdminSessionVerified(false);
@@ -473,13 +466,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })));
       }
 
-      // Set cookie for middleware route guarding
-      const userRole = foundUser?.role || authData.user.user_metadata?.role || 'warehouse_staff';
-      if (typeof document !== 'undefined') {
-        document.cookie = `wms_user_role=${userRole}; path=/; max-age=86400; SameSite=Lax`;
-        if (userRole === 'admin') {
-          document.cookie = `admin_verified=true; path=/; max-age=14400; SameSite=Lax`;
+      // Load the shared warehouse data now that the request can be authenticated.
+      try {
+        const syncRes = await fetch('/api/sync', { headers: await authJsonHeaders() });
+        if (syncRes.ok) {
+          const serverData = await syncRes.json();
+          if (Array.isArray(serverData.products) && serverData.products.length > 0) setProducts(serverData.products);
+          if (Array.isArray(serverData.stock) && serverData.stock.length > 0) setStock(serverData.stock);
+          if (Array.isArray(serverData.movements) && serverData.movements.length > 0) setMovements(serverData.movements);
+          if (Array.isArray(serverData.invoices) && serverData.invoices.length > 0) setInvoices(serverData.invoices);
+          if (Array.isArray(serverData.corrections) && serverData.corrections.length > 0) setCorrectionRequests(serverData.corrections);
         }
+      } catch (e) {}
+
+      // Admin access is verified server-side (middleware reads the Supabase session and DB role).
+      // Clear legacy client-set cookies from older versions.
+      if (typeof document !== 'undefined') {
+        document.cookie = 'wms_user_role=; path=/; max-age=0';
+        document.cookie = 'admin_verified=; path=/; max-age=0';
       }
 
       if (foundUser?.assigned_warehouse_id) {

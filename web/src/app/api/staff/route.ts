@@ -82,7 +82,12 @@ function writeStoreUser(newUser: any) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Staff names, emails and phones: signed-in staff only.
+  const auth = await authenticateRequest(req);
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
   try {
     let users = readStoreUsers();
 

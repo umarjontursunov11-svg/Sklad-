@@ -50,7 +50,12 @@ function writeStore(data: any) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Products, stock, invoices and staff contacts are internal data: signed-in staff only.
+  const auth = await authenticateRequest(req);
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
   const store = readStore();
   // Never send password hashes to the browser.
   const users = Array.isArray(store.users) ? store.users.map((u: any) => sanitizeUser(u)) : [];
