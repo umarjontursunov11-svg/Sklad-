@@ -453,6 +453,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setAuthenticatedUserId(activeId);
       setCurrentUserIdState(activeId);
 
+      // Reload staff profiles now that the session exists (RLS hides them before login).
+      const { data: dbUsers } = await (supabase.from('users') as any)
+        .select('id, name, email, role_id, employee_id, phone, full_name, assigned_warehouse_id, must_change_password, roles(name)');
+      if (Array.isArray(dbUsers) && dbUsers.length > 0) {
+        setUsers(dbUsers.map((u: any) => ({
+          id: u.id,
+          name: u.full_name || u.name,
+          full_name: u.full_name || u.name,
+          username: u.email ? u.email.split('@')[0] : u.name,
+          email: u.email,
+          employee_id: u.employee_id || null,
+          phone: u.phone || null,
+          role: (u.roles?.name || 'warehouse_staff') as UserRole,
+          role_id: u.role_id || '',
+          password_hash: '',
+          assigned_warehouse_id: u.assigned_warehouse_id || null,
+          must_change_password: u.must_change_password ?? false,
+        })));
+      }
+
       // Set cookie for middleware route guarding
       const userRole = foundUser?.role || authData.user.user_metadata?.role || 'warehouse_staff';
       if (typeof document !== 'undefined') {
@@ -1683,16 +1703,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const verifyAdminPin = async (pin: string): Promise<boolean> => {
     const candidate = (pin || '').trim();
     let isMatch = false;
-    if (candidate && authenticatedUser && authenticatedUser.role === 'admin') {
-      if (isSupabaseConfigured && supabase) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: authenticatedUser.email,
-          password: candidate,
-        });
-        isMatch = !error;
-      } else if (authenticatedUser.password_hash) {
+    try {
+      if (candidate && isSupabaseConfigured && supabase) {
+        // Read identity and role from Supabase directly (the local users list may not be loaded yet).
+        const { data: userData } = await supabase.auth.getUser();
+        const authUser = userData?.user;
+        if (authUser?.email) {
+          const { data: profile } = await (supabase.from('users') as any)
+            .select('id, roles(name)')
+            .eq('id', authUser.id)
+            .maybeSingle();
+          if ((profile as any)?.roles?.name === 'admin') {
+            // Re-authenticate with the admin's own account password.
+            const { error } = await supabase.auth.signInWithPassword({
+              email: authUser.email,
+              password: candidate,
+            });
+            isMatch = !error;
+          }
+        }
+      } else if (candidate && authenticatedUser?.role === 'admin' && authenticatedUser.password_hash) {
         isMatch = (await hashPassword(candidate)) === authenticatedUser.password_hash;
       }
+    } catch (e) {
+      isMatch = false;
     }
     if (isMatch) {
       setAdminSessionVerified(true);
