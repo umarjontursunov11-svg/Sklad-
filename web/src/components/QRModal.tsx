@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import { ensureRobotoFonts } from '../lib/pdf-fonts';
@@ -272,7 +273,7 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
     printViaIframe(html);
   };
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn no-print">
       <div className="relative w-full max-w-md p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
         <button
@@ -378,4 +379,8 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
       </div>
     </div>
   );
+
+  // Render at <body> level so page animations/layout can never push the modal off-screen.
+  if (typeof document === 'undefined') return modalContent;
+  return createPortal(modalContent, document.body);
 };

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
 import { ensureRobotoFonts } from '../lib/pdf-fonts';
@@ -653,7 +654,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
   const previewMax = 36;
   const previewList = selectedList.slice(0, previewMax);
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 no-print">
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden rounded-2xl bg-slate-950 border border-white/15 shadow-2xl">
         {/* Header */}
@@ -1030,4 +1031,8 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
       </div>
     </div>
   );
+
+  // Render at <body> level so page animations/layout can never push the modal off-screen.
+  if (typeof document === 'undefined') return modalContent;
+  return createPortal(modalContent, document.body);
 };
