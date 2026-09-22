@@ -25,6 +25,7 @@ import {
   Save,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { ProductSearchSelect } from '../../components/ProductSearchSelect';
 
 export default function InvoicesPage() {
   const { invoices, warehouses, productsWithStock, createSaleInvoice, updateInvoiceCreator, cancelInvoice, currentUser, users } = useApp();
@@ -72,6 +73,18 @@ export default function InvoicesPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Filtered invoices
+  // Options for the searchable product picker (stock shown for the selected warehouse)
+  const productOptions = useMemo(
+    () =>
+      productsWithStock.map((prod) => ({
+        id: prod.id,
+        name: prod.name,
+        code: prod.qr_code_data,
+        hint: `${prod.warehouse_stock[formWarehouseId] ?? 0} ${prod.unit}`,
+      })),
+    [productsWithStock, formWarehouseId]
+  );
+
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
       const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
@@ -837,17 +850,11 @@ export default function InvoicesPage() {
                       className="p-3 bg-slate-900/60 rounded-xl border border-white/10 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center"
                     >
                       <div className="sm:col-span-5">
-                        <select
+                        <ProductSearchSelect
+                          options={productOptions}
                           value={item.productId}
-                          onChange={(e) => handleItemChange(idx, 'productId', e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs bg-slate-800 border border-white/10 rounded-lg text-white focus:outline-none focus:border-indigo-500"
-                        >
-                          {productsWithStock.map((prod) => (
-                            <option key={prod.id} value={prod.id}>
-                              {prod.name} ({prod.warehouse_stock[formWarehouseId] ?? 0} {prod.unit})
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(id) => handleItemChange(idx, 'productId', id)}
+                        />
                       </div>
 
                       <div className="sm:col-span-3 flex items-center gap-1.5">
