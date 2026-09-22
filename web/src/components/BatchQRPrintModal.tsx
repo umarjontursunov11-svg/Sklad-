@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
+import { ensureRobotoFonts } from '../lib/pdf-fonts';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
 import { printViaIframe, escapeHtml } from '../lib/print-utils';
@@ -188,23 +189,23 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           const textWidth = labelWidth - textX - 1.5;
 
           doc.setFontSize(labelWidth <= 42 ? 5 : 6);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('Roboto', 'bold');
           doc.setTextColor(0, 0, 0);
           doc.text('OMNISTOCK', textX, 4);
 
           doc.setFontSize(labelWidth <= 42 ? 6 : 7.5);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('Roboto', 'bold');
           const titleLines = doc.splitTextToSize(item.name, textWidth);
           doc.text(titleLines.slice(0, 2), textX, labelWidth <= 42 ? 7.5 : 8.5);
 
           const skuY = labelHeight - (labelWidth <= 42 ? 6.5 : 8);
           doc.setFontSize(labelWidth <= 42 ? 7 : 8.5);
-          doc.setFont('courier', 'bold');
+          doc.setFont('Roboto', 'bold');
           doc.text(item.qr_code_data || item.id, textX, skuY);
 
           if (labelHeight >= 28) {
             doc.setFontSize(labelWidth <= 42 ? 5 : 6);
-            doc.setFont('helvetica', 'normal');
+            doc.setFont('Roboto', 'normal');
             doc.setTextColor(80, 80, 80);
             doc.text(
               labelWidth <= 42
@@ -230,6 +231,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           unit: 'mm',
           format: 'a4',
         });
+        ensureRobotoFonts(doc);
 
         const pageWidth = 210;
         const pageHeight = 297;
@@ -265,7 +267,7 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           doc.roundedRect(x, y, a4LabelWidth, 5, 2, 2, 'F');
           doc.setTextColor(255, 255, 255);
           doc.setFontSize(6);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('Roboto', 'bold');
           doc.text('OMNISTOCK PRO TAG', x + a4LabelWidth / 2, y + 3.8, { align: 'center' });
 
           if (qrUrl) {
@@ -276,20 +278,20 @@ export const BatchQRPrintModal: React.FC<BatchQRPrintModalProps> = ({
           const textX = x + a4LabelWidth * 0.48;
           doc.setTextColor(15, 23, 42);
           doc.setFontSize(8);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('Roboto', 'bold');
           const lines = doc.splitTextToSize(item.name, a4LabelWidth * 0.5);
           doc.text(lines.slice(0, 2), textX, y + 11);
 
           doc.setFontSize(7);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont('Roboto', 'normal');
           doc.setTextColor(71, 85, 105);
           doc.text(`CODE:`, textX, y + 22);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('Roboto', 'bold');
           doc.setTextColor(15, 23, 42);
           doc.text(item.qr_code_data || item.id, textX, y + 26);
 
           doc.setFontSize(6.5);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont('Roboto', 'normal');
           doc.setTextColor(100, 116, 139);
           doc.text(`Unit: ${item.unit.toUpperCase()} | Min: ${item.min_stock_level}`, textX, y + 32);
 

@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import QRCode from 'qrcode';
 import jsPDF from 'jspdf';
+import { ensureRobotoFonts } from '../lib/pdf-fonts';
 import { ProductWithStock } from '../lib/types';
 import { useI18n } from '../lib/i18n';
 import { printViaIframe, escapeHtml } from '../lib/print-utils';
@@ -59,6 +60,7 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
       unit: 'mm',
       format: [100, 100],
     });
+    ensureRobotoFonts(doc);
 
     doc.setDrawColor(99, 102, 241);
     doc.setLineWidth(1);
@@ -68,19 +70,19 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
     doc.roundedRect(4, 4, 92, 12, 3, 3, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Roboto', 'bold');
     doc.text('OMNISTOCK PRO INVENTORY TAG', 50, 12, { align: 'center' });
 
     doc.addImage(qrDataUrl, 'PNG', 20, 18, 60, 60);
 
     doc.setTextColor(15, 23, 42);
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Roboto', 'bold');
     const splitTitle = doc.splitTextToSize(product.name, 86);
     doc.text(splitTitle, 50, 82, { align: 'center' });
 
     doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Roboto', 'normal');
     doc.setTextColor(100, 116, 139);
     doc.text(`CODE: ${product.qr_code_data}  |  UNIT: ${product.unit.toUpperCase()}`, 50, 91, { align: 'center' });
 
@@ -95,6 +97,7 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
       unit: 'mm',
       format: [width, height],
     });
+    ensureRobotoFonts(doc);
 
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.1);
@@ -110,21 +113,21 @@ export const QRModal: React.FC<QRModalProps> = ({ product, onClose }) => {
     const textWidth = width - textX - 1.5;
 
     doc.setFontSize(width <= 42 ? 5 : 6);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Roboto', 'bold');
     doc.text('OMNISTOCK', textX, 4);
 
     doc.setFontSize(width <= 42 ? 6 : 7.5);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Roboto', 'bold');
     const titleLines = doc.splitTextToSize(product.name, textWidth);
     doc.text(titleLines.slice(0, 2), textX, width <= 42 ? 7.5 : 8.5);
 
     doc.setFontSize(width <= 42 ? 7 : 8.5);
-    doc.setFont('courier', 'bold');
+    doc.setFont('Roboto', 'bold');
     doc.text(product.qr_code_data, textX, height - (width <= 42 ? 6.5 : 8));
 
     if (height >= 28) {
       doc.setFontSize(width <= 42 ? 5 : 6);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('Roboto', 'normal');
       doc.setTextColor(80, 80, 80);
       doc.text(
         width <= 42

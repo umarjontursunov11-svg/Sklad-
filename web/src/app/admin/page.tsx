@@ -65,7 +65,7 @@ export default function AdminPage() {
     );
   }
 
-  // If admin session is not verified, the admin re-enters their own account password
+  // If admin session is not verified, require server-verified Admin PIN
   if (!adminSessionVerified) {
     const handleVerify = async (e: React.FormEvent) => {
       e.preventDefault();

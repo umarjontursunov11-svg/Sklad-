@@ -126,9 +126,7 @@ CREATE POLICY "Staff can view assigned warehouse stock, managers view all"
     TO authenticated
     USING (
         public.is_manager_or_admin() OR
-        warehouse_id = public.get_user_warehouse() OR
-        -- Allow lookup of stock across warehouses for scanned products
-        true
+        warehouse_id = public.get_user_warehouse()
     );
 
 -- Modifications to stock must go through stored procedure or be done by manager/admin

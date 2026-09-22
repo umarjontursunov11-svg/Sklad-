@@ -1,6 +1,7 @@
 import { InvoiceWithItems } from './types';
 import { printViaIframe, escapeHtml } from './print-utils';
 import { jsPDF } from 'jspdf';
+import { ensureRobotoFonts } from './pdf-fonts';
 
 export interface CompanyInfo {
   name: string;
@@ -10,7 +11,7 @@ export interface CompanyInfo {
 }
 
 export const DEFAULT_COMPANY: CompanyInfo = {
-  name: '«STANDART VA METROLOGIYA» MCHJ',
+  name: '"STANDART VA METROLOGIYA" MCHJ',
   phone: '+998 98 361-71-83',
   address: 'Toshkent sh., Yakkasaroy tumani Yakkasaroy k. 5-uy',
   inn: '308097539',
@@ -94,7 +95,7 @@ export const generateWaybillHtml = (
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
-  <title>Yuk Xati / Накладная: ${escapeHtml(invoice.invoice_number)}</title>
+  <title>Yuk Xati / Nakladnaya: </title>
   <style>
     @page {
       size: A4 portrait;
@@ -303,14 +304,14 @@ export const generateWaybillHtml = (
     <div class="title-row">
       <div>
         <h1 class="doc-title">Tovarni Jo'natish Hujjati</h1>
-        <p class="doc-subtitle">Товарная накладная / Sales Invoice &amp; Delivery Waybill</p>
+        <p class="doc-subtitle">Tovarni jo'natish hujjati / Товарная накладная / Sales Invoice &amp; Delivery Waybill</p>
       </div>
       <div>
         <div class="doc-number">${escapeHtml(invoice.invoice_number)}</div>
         <div class="doc-date">Sana: ${formatDate(invoice.created_at)}</div>
         <div style="text-align: right;">
           <span class="status-badge status-${invoice.status}">
-            ${invoice.status === 'issued' ? 'RASMIYLASHTIRILGAN / ВЫДАН' : invoice.status === 'cancelled' ? 'BEKOR QILINGAN / АННУЛИРОВАН' : 'QORALAMA / ЧЕРНОВИК'}
+            ${invoice.status === 'issued' ? 'RASMIYLASHTIRILGAN / ОФОРМЛЕН' : invoice.status === 'cancelled' ? 'BEKOR QILINGAN / АННУЛИРОВАН' : 'QORALAMA / ЧЕРНОВИК'}
           </span>
         </div>
       </div>
@@ -340,7 +341,7 @@ export const generateWaybillHtml = (
     <thead>
       <tr>
         <th style="width: 35px; text-align: center;">№</th>
-        <th>Mahsulot nomi / Наименование</th>
+        <th>Mahsulot nomi / Наименование товара</th>
         <th style="width: 80px; text-align: center;">Birligi</th>
         <th style="width: 70px; text-align: right;">Miqdor</th>
         <th style="width: 120px; text-align: right;">Narxi</th>
@@ -377,7 +378,7 @@ export const generateWaybillHtml = (
 
   <div class="signatures-grid">
     <div class="signature-card">
-      <div class="signature-role">Topshirdi / Отпустил (Ombor mas'uli):</div>
+      <div class="signature-role">Topshirdi / Сдал (Ombor mas'uli):</div>
       <div class="signature-line">
         <span>${escapeHtml(invoice.creator_name || 'Admin')}</span>
       </div>
@@ -386,12 +387,11 @@ export const generateWaybillHtml = (
         <span>Sana: ____________</span>
       </div>
       <div class="stamp-box">
-        M.O'. / М.П.
-      </div>
+        M.O'. / М.П.</div>
     </div>
 
     <div class="signature-card">
-      <div class="signature-role">Qabul qildi / Получил (Xaridor / Vakil):</div>
+      <div class="signature-role">Qabul qildi / Принял (Xaridor / Vakil):</div>
       <div class="signature-line">
         <span>${escapeHtml(invoice.customer_name)}</span>
       </div>
@@ -400,8 +400,7 @@ export const generateWaybillHtml = (
         <span>Sana: ____________</span>
       </div>
       <div class="stamp-box">
-        M.O'. / М.П.
-      </div>
+        M.O'. / М.П.</div>
     </div>
   </div>
 </body>
@@ -430,11 +429,14 @@ export const downloadWaybillPdf = (
     format: 'a4',
   });
 
+  // Embed Unicode TrueType Roboto fonts to support Cyrillic & Uzbek Latin diacritics
+  ensureRobotoFonts(doc);
+
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 16;
 
   // Header
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(15, 23, 42);
   doc.text("TOVARNI JO'NATISH HUJJATI / NAKLADNAYA", 14, y);
@@ -444,7 +446,7 @@ export const downloadWaybillPdf = (
   doc.text(invoice.invoice_number, pageWidth - 14, y, { align: 'right' });
 
   y += 7;
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 116, 139);
   doc.text('Savdo va yuk jo\'natish hisob-fakturasi (Waybill)', 14, y);
@@ -463,14 +465,14 @@ export const downloadWaybillPdf = (
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.roundedRect(14, y, boxWidth, 28, 2, 2, 'FD');
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
   doc.text('YETKAZIB BERUVCHI / SOTUVCHI', 18, y + 6);
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
   doc.text(company.name, 18, y + 12);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
   doc.text(`Ombor: ${invoice.warehouse_name || 'Asosiy Ombor'}`, 18, y + 17);
@@ -480,14 +482,14 @@ export const downloadWaybillPdf = (
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.roundedRect(18 + boxWidth, y, boxWidth, 28, 2, 2, 'FD');
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
   doc.text('XARIDOR / QABUL QILUVCHI', 22 + boxWidth, y + 6);
   doc.setFontSize(10);
   doc.setTextColor(15, 23, 42);
   doc.text(invoice.customer_name, 22 + boxWidth, y + 12);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(71, 85, 105);
   doc.text(`Tel: ${invoice.customer_phone || 'Keltirilmagan'}`, 22 + boxWidth, y + 17);
@@ -503,7 +505,7 @@ export const downloadWaybillPdf = (
   doc.setDrawColor(148, 163, 184);
   doc.rect(14, y, pageWidth - 28, 8, 'S');
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(15, 23, 42);
   doc.text('№', 16, y + 5.5);
@@ -516,7 +518,7 @@ export const downloadWaybillPdf = (
   y += 8;
 
   // Items
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
 
@@ -531,9 +533,9 @@ export const downloadWaybillPdf = (
     doc.text(item.product?.unit || 'dona', 105, y + 5);
     doc.text(String(item.quantity), 125, y + 5, { align: 'right' });
     doc.text(new Intl.NumberFormat('uz-UZ').format(item.unit_price) + " so'm", 155, y + 5, { align: 'right' });
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Roboto', 'bold');
     doc.text(new Intl.NumberFormat('uz-UZ').format(item.line_total) + " so'm", pageWidth - 16, y + 5, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Roboto', 'normal');
 
     y += rowHeight;
   });
@@ -543,7 +545,7 @@ export const downloadWaybillPdf = (
   const totalBoxX = pageWidth - 90;
   doc.setFillColor(15, 23, 42);
   doc.rect(totalBoxX, y, 76, 12, 'F');
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(255, 255, 255);
   doc.text("JAMI TO'LOV:", totalBoxX + 4, y + 7.5);
@@ -558,10 +560,10 @@ export const downloadWaybillPdf = (
 
   // Left signature
   doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(9);
   doc.text("Topshirdi / O'tkazdi:", 14, y);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.text(`Mas'ul: ${invoice.creator_name || 'Admin'}`, 14, y + 6);
   doc.line(14, y + 16, 85, y + 16);
   doc.setFontSize(7.5);
@@ -571,10 +573,10 @@ export const downloadWaybillPdf = (
   // Right signature
   const rightSigX = pageWidth - 85;
   doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Roboto', 'bold');
   doc.setFontSize(9);
   doc.text('Qabul qildi / Xaridor:', rightSigX, y);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Roboto', 'normal');
   doc.text(`Mijoz: ${invoice.customer_name}`, rightSigX, y + 6);
   doc.line(rightSigX, y + 16, pageWidth - 14, y + 16);
   doc.setFontSize(7.5);

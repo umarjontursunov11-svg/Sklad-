@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import ExcelJS from 'exceljs';
 import jsPDF from 'jspdf';
+import { ensureRobotoFonts } from '@/lib/pdf-fonts';
 import { useApp } from '../../lib/store';
 import { useI18n } from '../../lib/i18n';
 import { authJsonHeaders } from '../../lib/supabase/client';
@@ -319,16 +320,16 @@ export default function ReportsPage() {
       doc.rect(0, 0, 297, 24, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('Roboto', 'bold');
       doc.text('OMNISTOCK PRO - WAREHOUSE MANAGEMENT SYSTEM', 14, 12);
       doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('Roboto', 'normal');
       doc.setTextColor(148, 163, 184);
       doc.text(`Generated: ${new Date().toLocaleString()} | Language: ${language.toUpperCase()}`, 14, 18);
 
       doc.setTextColor(15, 23, 42);
       doc.setFontSize(13);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('Roboto', 'bold');
       const title =
         reportType === 'inventory'
           ? t.overallStockReport
@@ -345,7 +346,7 @@ export default function ReportsPage() {
         doc.setFillColor(241, 245, 249);
         doc.rect(14, startY, 269, 7, 'F');
         doc.setFontSize(8);
-        doc.setFont('helvetica', 'bold');
+        doc.setFont('Roboto', 'bold');
         doc.setTextColor(51, 65, 85);
         doc.text('QR IDENTIFIER', 16, startY + 5);
         doc.text('PRODUCT NAME', 50, startY + 5);
@@ -368,7 +369,7 @@ export default function ReportsPage() {
           }
 
           doc.setFontSize(8);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont('Roboto', 'normal');
           doc.setTextColor(15, 23, 42);
           doc.text(item.qr_code_data, 16, startY);
           doc.text(item.name.slice(0, 36), 50, startY);
@@ -377,7 +378,7 @@ export default function ReportsPage() {
 
           if (item.is_low_stock) {
             doc.setTextColor(225, 29, 72);
-            doc.setFont('helvetica', 'bold');
+            doc.setFont('Roboto', 'bold');
           } else {
             doc.setTextColor(16, 185, 129);
           }
@@ -391,7 +392,7 @@ export default function ReportsPage() {
         doc.setFillColor(241, 245, 249);
         doc.rect(14, startY, 269, 7, 'F');
         doc.setFontSize(8);
-        doc.setFont('helvetica', 'bold');
+        doc.setFont('Roboto', 'bold');
         doc.setTextColor(51, 65, 85);
         doc.text('DATE', 16, startY + 5);
         doc.text('TYPE', 45, startY + 5);
@@ -417,7 +418,7 @@ export default function ReportsPage() {
           }
 
           doc.setFontSize(7.5);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont('Roboto', 'normal');
           doc.setTextColor(15, 23, 42);
           doc.text(new Date(m.timestamp).toLocaleDateString(), 16, startY);
           doc.text(m.movement_type.toUpperCase(), 45, startY);
