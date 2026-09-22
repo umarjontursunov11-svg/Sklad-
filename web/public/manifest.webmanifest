@@ -1,0 +1,18 @@
+{
+  "name": "OmniStock PRO — Ombor",
+  "short_name": "Ombor",
+  "description": "Omborni avtomatlashtirish: qoldiqlar, kirim-chiqim, QR skaner, yuk xatlari",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "lang": "uz",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

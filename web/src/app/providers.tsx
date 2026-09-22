@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppProvider, useApp } from '../lib/store';
 import { I18nProvider } from '../lib/i18n';
 import { Navbar } from '../components/Navbar';
 import { Sidebar } from '../components/Sidebar';
+import { MobileNav } from '../components/MobileNav';
 import { WebCameraScanner } from '../components/WebCameraScanner';
 import { QuickTransactionModal } from '../components/QuickTransactionModal';
 import { LoginScreen } from '../components/LoginScreen';
@@ -39,10 +40,13 @@ const AuthenticatedApp: React.FC<{ children: React.ReactNode }> = ({ children })
 
       <div className="flex flex-1">
         <Sidebar />
-        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
+        <main className="flex-1 min-w-0 p-4 pb-28 sm:p-6 sm:pb-28 md:p-8 lg:pb-8 max-w-7xl mx-auto w-full">
           {children}
         </main>
       </div>
+
+      {/* Phone / tablet bottom navigation (desktop uses the Sidebar) */}
+      <MobileNav onOpenScanner={() => setIsScannerOpen(true)} />
 
       {/* Global Camera Scanner Modal */}
       {isScannerOpen && (
@@ -64,6 +68,13 @@ const AuthenticatedApp: React.FC<{ children: React.ReactNode }> = ({ children })
 };
 
 export const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Register the service worker so the site can be installed as a phone app (PWA).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (process.env.NODE_ENV !== 'production') return;
+    navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('SW registration failed:', e));
+  }, []);
+
   return (
     <I18nProvider>
       <AppProvider>
