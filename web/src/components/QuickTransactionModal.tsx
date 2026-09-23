@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { ProductSearchSelect } from './ProductSearchSelect';
+import { WebCameraScanner } from './WebCameraScanner';
 import confetti from 'canvas-confetti';
 import { ProductWithStock, MovementType, InvoiceWithItems } from '../lib/types';
 import { useApp } from '../lib/store';
@@ -24,6 +25,7 @@ import {
   ExternalLink,
   Plus,
   Trash2,
+  QrCode,
 } from 'lucide-react';
 
 interface QuickTransactionModalProps {
@@ -106,6 +108,22 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   const updateExtraItem = (idx: number, patch: Partial<{ productId: string; quantity: number; unitPrice: number }>) =>
     setExtraItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
   const removeExtraItem = (idx: number) => setExtraItems((prev) => prev.filter((_, i) => i !== idx));
+
+  // "+ Yana tovar qo'shish" via camera: every scan adds a line (or +1 if the product is already listed).
+  const [isAddScannerOpen, setIsAddScannerOpen] = useState(false);
+  const handleAddScan = (scanned: ProductWithStock) => {
+    if (product && scanned.id === product.id) {
+      setQuantity((q) => Number(q) + 1);
+      return;
+    }
+    setExtraItems((prev) => {
+      const idx = prev.findIndex((it) => it.productId === scanned.id);
+      if (idx >= 0) return prev.map((it, i) => (i === idx ? { ...it, quantity: Number(it.quantity) + 1 } : it));
+      const emptyIdx = prev.findIndex((it) => !it.productId);
+      if (emptyIdx >= 0) return prev.map((it, i) => (i === emptyIdx ? { ...it, productId: scanned.id } : it));
+      return [...prev, { productId: scanned.id, quantity: 1, unitPrice: 0 }];
+    });
+  };
 
   if (!product) return null;
 
@@ -514,14 +532,33 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
                   </div>
                 );
               })}
-              <button
-                type="button"
-                onClick={addExtraItem}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-dashed border-indigo-500/40 rounded-xl"
-              >
-                <Plus className="w-4 h-4" /> Yana tovar qo'shish
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={addExtraItem}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 border border-dashed border-indigo-500/40 rounded-xl"
+                >
+                  <Plus className="w-4 h-4" /> Yana tovar qo'shish
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddScannerOpen(true)}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-dashed border-emerald-500/40 rounded-xl"
+                  title="QR kod orqali qo'shish"
+                >
+                  <QrCode className="w-4 h-4" /> Skanerlash
+                </button>
+              </div>
             </div>
+
+            {isAddScannerOpen && (
+              <WebCameraScanner
+                continuous
+                title="Tovarlarni skanerlash"
+                onScanSuccess={handleAddScan}
+                onClose={() => setIsAddScannerOpen(false)}
+              />
+            )}
 
             <div>
               <input
