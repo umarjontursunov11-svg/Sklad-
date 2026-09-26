@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import QRCode from 'qrcode';
-import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, LoginLog, UserRole } from './types';
+import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, CorrectionChanges, LoginLog, UserRole } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
 import { supabase, isSupabaseConfigured, authJsonHeaders } from './supabase/client';
 
@@ -130,11 +130,7 @@ interface AppContextType {
   submitCorrectionRequest: (params: {
     movementId: string;
     reason: string;
-    requestedChanges: {
-      quantity?: number;
-      movement_type?: MovementType;
-      notes?: string;
-    };
+    requestedChanges: CorrectionChanges;
   }) => { success: boolean; error?: string; request?: CorrectionRequest };
   reviewCorrectionRequest: (params: {
     requestId: string;
@@ -1520,11 +1516,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }: {
     movementId: string;
     reason: string;
-    requestedChanges: {
-      quantity?: number;
-      movement_type?: MovementType;
-      notes?: string;
-    };
+    requestedChanges: CorrectionChanges;
   }): { success: boolean; error?: string; request?: CorrectionRequest } => {
     const targetMovement = movements.find((m) => m.id === movementId);
     if (!targetMovement) {
@@ -1545,6 +1537,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: "Tuzatish sababi ko'rsatilishi shart." };
     }
 
+    const targetProduct = products.find((p) => p.id === targetMovement.product_id);
+    const quantityChanged =
+      requestedChanges.quantity !== undefined && requestedChanges.quantity !== targetMovement.quantity;
+    const dateChanged =
+      requestedChanges.manufacture_date !== undefined &&
+      (requestedChanges.manufacture_date || null) !== (targetProduct?.manufacture_date || null);
+    const storageChanged =
+      requestedChanges.storage_conditions !== undefined &&
+      (requestedChanges.storage_conditions || null) !== (targetProduct?.storage_conditions || null);
+
+    if (!quantityChanged && !dateChanged && !storageChanged && !requestedChanges.movement_type) {
+      return { success: false, error: "Hech qanday o'zgarish kiritilmagan." };
+    }
+
+    if (dateChanged && requestedChanges.manufacture_date) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (requestedChanges.manufacture_date > today) {
+        return { success: false, error: "Ishlab chiqarilgan sana kelajakdagi sana bo'lishi mumkin emas." };
+      }
+      if (targetProduct?.expiry_date && requestedChanges.manufacture_date > targetProduct.expiry_date) {
+        return {
+          success: false,
+          error: "Ishlab chiqarilgan sana yaroqlilik muddatidan keyin bo'lishi mumkin emas.",
+        };
+      }
+    }
+
+    // Keep only the fields that actually change
+    const changes: CorrectionChanges = {};
+    if (quantityChanged) changes.quantity = requestedChanges.quantity;
+    if (requestedChanges.movement_type) changes.movement_type = requestedChanges.movement_type;
+    if (requestedChanges.notes) changes.notes = requestedChanges.notes;
+    if (dateChanged) changes.manufacture_date = requestedChanges.manufacture_date || null;
+    if (storageChanged) changes.storage_conditions = requestedChanges.storage_conditions?.trim() || null;
+
     const newRequest: CorrectionRequest = {
       id: `req-${Date.now()}`,
       movement_id: movementId,
@@ -1552,7 +1579,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requester_name: currentUser.name,
       requester_employee_id: currentUser.employee_id || null,
       reason: reason.trim(),
-      requested_changes: requestedChanges,
+      requested_changes: changes,
+      original_values: {
+        quantity: targetMovement.quantity,
+        manufacture_date: targetProduct?.manufacture_date || null,
+        storage_conditions: targetProduct?.storage_conditions || null,
+      },
       status: 'pending',
       created_at: new Date().toISOString(),
       movement: targetMovement,
@@ -1564,6 +1596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       request_id: newRequest.id,
       movement_id: movementId,
       reason: reason.trim(),
+      requested_changes: changes,
     });
 
     return { success: true, request: newRequest };
@@ -1597,9 +1630,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (status === 'approved' && targetMovement) {
       const newQty = req.requested_changes.quantity !== undefined ? req.requested_changes.quantity : targetMovement.quantity;
       const newType = req.requested_changes.movement_type || targetMovement.movement_type;
+      const stockChanged = newQty !== targetMovement.quantity || newType !== targetMovement.movement_type;
+
+      // Product-level fields: manufacture date and storage temperature/conditions
+      const productUpdates: Partial<Product> = {};
+      if (req.requested_changes.manufacture_date !== undefined) {
+        productUpdates.manufacture_date = req.requested_changes.manufacture_date;
+      }
+      if (req.requested_changes.storage_conditions !== undefined) {
+        productUpdates.storage_conditions = req.requested_changes.storage_conditions;
+      }
+      if (Object.keys(productUpdates).length > 0) {
+        updateProduct(targetMovement.product_id, productUpdates);
+      }
 
       // Revert old movement effect and apply new one on stock
-      setStock((prev) => {
+      if (stockChanged) setStock((prev) => {
         let updated = [...prev];
         const stockIdx = updated.findIndex(
           (s) => s.product_id === targetMovement.product_id && s.warehouse_id === targetMovement.warehouse_id
@@ -1701,6 +1747,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     recordLoginLog(status === 'approved' ? 'correction_approved' : 'correction_rejected', {
       request_id: requestId,
       movement_id: req.movement_id,
+      requested_changes: req.requested_changes,
       notes: reviewNotes,
     });
 

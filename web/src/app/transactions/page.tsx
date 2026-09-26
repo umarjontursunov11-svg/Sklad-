@@ -50,6 +50,8 @@ export default function TransactionsPage() {
   const [correctionReason, setCorrectionReason] = useState('');
   const [correctionNewQty, setCorrectionNewQty] = useState<number>(1);
   const [correctionNotes, setCorrectionNotes] = useState('');
+  const [correctionMfgDate, setCorrectionMfgDate] = useState('');
+  const [correctionStorage, setCorrectionStorage] = useState('');
   const [requestFeedback, setRequestFeedback] = useState<{ success?: string; error?: string } | null>(null);
 
   // Manager Review State
@@ -76,6 +78,46 @@ export default function TransactionsPage() {
     return matchesType && matchesStaff && matchesSearch;
   });
 
+  const STORAGE_PRESETS = [
+    t.storagePresetRefrigerated,
+    t.storagePresetRoom,
+    t.storagePresetDryDark,
+    t.storagePresetKeepDry,
+  ];
+
+  const correctionTargetProduct = correctionTargetMovement
+    ? productsWithStock.find((p) => p.id === correctionTargetMovement.product_id) || null
+    : null;
+
+  // Human-readable list of requested changes ("old → new")
+  const describeChanges = (req: CorrectionRequest, unit?: string) => {
+    const orig = req.original_values || {};
+    const ch = req.requested_changes;
+    const rows: { label: string; from: string; to: string }[] = [];
+    if (ch.quantity !== undefined) {
+      rows.push({
+        label: 'Miqdor',
+        from: `${orig.quantity ?? movements.find((m) => m.id === req.movement_id)?.quantity ?? '—'} ${unit || ''}`.trim(),
+        to: `${ch.quantity} ${unit || ''}`.trim(),
+      });
+    }
+    if (ch.manufacture_date !== undefined) {
+      rows.push({
+        label: t.manufactureDate,
+        from: orig.manufacture_date || '—',
+        to: ch.manufacture_date || '—',
+      });
+    }
+    if (ch.storage_conditions !== undefined) {
+      rows.push({
+        label: 'Saqlash harorati / sharoiti',
+        from: orig.storage_conditions || '—',
+        to: ch.storage_conditions || '—',
+      });
+    }
+    return rows;
+  };
+
   const pendingCorrections = correctionRequests.filter((r) => r.status === 'pending');
   const visibleCorrections = isStaff
     ? correctionRequests.filter((r) => r.requested_by === currentUser.id)
@@ -86,6 +128,9 @@ export default function TransactionsPage() {
     setCorrectionNewQty(m.quantity);
     setCorrectionReason('');
     setCorrectionNotes('');
+    const prod = productsWithStock.find((p) => p.id === m.product_id);
+    setCorrectionMfgDate(prod?.manufacture_date || '');
+    setCorrectionStorage(prod?.storage_conditions || '');
     setRequestFeedback(null);
   };
 
@@ -99,6 +144,8 @@ export default function TransactionsPage() {
       requestedChanges: {
         quantity: Number(correctionNewQty),
         notes: correctionNotes || undefined,
+        manufacture_date: correctionMfgDate || null,
+        storage_conditions: correctionStorage.trim() || null,
       },
     });
 
@@ -447,11 +494,12 @@ export default function TransactionsPage() {
                         «{req.reason}»
                       </div>
 
-                      {req.requested_changes.quantity !== undefined && (
-                        <div className="text-xs text-indigo-300 font-semibold">
-                          Taklif etilgan to'g'ri miqdor: {req.requested_changes.quantity} {prod?.unit}
+                      {describeChanges(req, prod?.unit).map((row) => (
+                        <div key={row.label} className="text-xs text-indigo-300 font-semibold">
+                          {row.label}: <span className="text-slate-400 line-through">{row.from}</span> →{' '}
+                          <span className="text-emerald-300">{row.to}</span>
                         </div>
-                      )}
+                      ))}
 
                       <div className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
                         <span>Yubordi:</span>
@@ -540,6 +588,60 @@ export default function TransactionsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  {t.manufactureDate}
+                </label>
+                <input
+                  type="date"
+                  value={correctionMfgDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setCorrectionMfgDate(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-900 border border-white/10 rounded-xl text-white focus:outline-none focus:border-indigo-500"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Hozirgi: {correctionTargetProduct?.manufacture_date || '—'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Saqlash harorati / sharoiti
+                </label>
+                <input
+                  type="text"
+                  list="correction-storage-presets"
+                  value={correctionStorage}
+                  onChange={(e) => setCorrectionStorage(e.target.value)}
+                  placeholder="Masalan: +2°C...+8°C"
+                  className="w-full px-3 py-2 text-xs bg-slate-900 border border-white/10 rounded-xl text-white focus:outline-none focus:border-indigo-500"
+                />
+                <datalist id="correction-storage-presets">
+                  {STORAGE_PRESETS.map((preset) => (
+                    <option key={preset} value={preset} />
+                  ))}
+                </datalist>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {STORAGE_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCorrectionStorage(preset)}
+                      className={`px-2 py-0.5 text-[10px] rounded-lg border transition-colors ${
+                        correctionStorage === preset
+                          ? 'bg-indigo-600/30 border-indigo-500/50 text-indigo-200'
+                          : 'bg-slate-900 border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Hozirgi: {correctionTargetProduct?.storage_conditions || '—'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Tuzatish sababi (nima sababdan xato bo'ldi) *
                 </label>
                 <textarea
@@ -611,14 +713,19 @@ export default function TransactionsPage() {
                   <span className="text-slate-400">Sabab: </span>
                   <span className="text-amber-300">«{reviewModalTarget.reason}»</span>
                 </div>
-                {reviewModalTarget.requested_changes.quantity !== undefined && (
-                  <div>
-                    <span className="text-slate-400">Taklif etilgan miqdor: </span>
-                    <span className="text-emerald-400 font-bold">
-                      {reviewModalTarget.requested_changes.quantity} dona
-                    </span>
+                {describeChanges(
+                  reviewModalTarget,
+                  productsWithStock.find(
+                    (p) => p.id === movements.find((m) => m.id === reviewModalTarget.movement_id)?.product_id
+                  )?.unit
+                ).map((row) => (
+                  <div key={row.label}>
+                    <span className="text-slate-400">{row.label}: </span>
+                    <span className="text-slate-500 line-through">{row.from}</span>{' '}
+                    <span className="text-slate-400">→</span>{' '}
+                    <span className="text-emerald-400 font-bold">{row.to}</span>
                   </div>
-                )}
+                ))}
               </div>
 
               <div>
@@ -647,7 +754,7 @@ export default function TransactionsPage() {
                   onClick={() => handleReviewAction('approved')}
                   className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg shadow-emerald-600/30 transition-colors"
                 >
-                  Tasdiqlash va Qoldiqni Yangilash
+                  Tasdiqlash va Yangilash
                 </button>
               </div>
             </div>
