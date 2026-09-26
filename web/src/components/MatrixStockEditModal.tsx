@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../lib/store';
 import { useI18n } from '../lib/i18n';
 import { ProductWithStock } from '../lib/types';
@@ -166,9 +167,13 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
     'Hujjatdagi texnik tafovut tuzatildi',
   ];
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-xl p-6 sm:p-7 rounded-3xl glass-panel border border-indigo-500/30 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden">
+  if (typeof document === 'undefined') return null;
+
+  // Portal to <body> so the page's animated wrapper doesn't trap the fixed overlay,
+  // and let the overlay scroll so a tall modal is reachable from top to bottom.
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="relative my-auto w-full max-w-xl p-6 sm:p-7 rounded-3xl glass-panel border border-indigo-500/30 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500" />
 
         <button
@@ -436,6 +441,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
