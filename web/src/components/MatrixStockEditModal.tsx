@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../lib/store';
+import { useI18n } from '../lib/i18n';
 import { ProductWithStock } from '../lib/types';
 import {
   X,
@@ -14,6 +15,8 @@ import {
   RotateCcw,
   Sparkles,
   Layers,
+  Calendar,
+  Thermometer,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -26,13 +29,23 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
   product,
   onClose,
 }) => {
-  const { warehouses, adjustStockBalance } = useApp();
+  const { warehouses, adjustStockBalance, updateProduct, recordLoginLog } = useApp();
+  const { t } = useI18n();
 
   const [quantities, setQuantities] = useState<{ [whId: string]: number }>({});
   const [reason, setReason] = useState<string>('Inventarizatsiya qayta hisobi');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [manufactureDate, setManufactureDate] = useState('');
+  const [storageConditions, setStorageConditions] = useState('');
+
+  const STORAGE_PRESETS = [
+    t.storagePresetRefrigerated,
+    t.storagePresetRoom,
+    t.storagePresetDryDark,
+    t.storagePresetKeepDry,
+  ];
 
   useEffect(() => {
     if (product) {
@@ -41,6 +54,8 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
         initialMap[wh.id] = Number(product.warehouse_stock[wh.id] ?? 0);
       });
       setQuantities(initialMap);
+      setManufactureDate(product.manufacture_date || '');
+      setStorageConditions(product.storage_conditions || '');
       setSuccessMessage(null);
       setErrorMessage(null);
     }
@@ -70,6 +85,24 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
     setErrorMessage(null);
     setIsSubmitting(true);
 
+    const newMfgDate = manufactureDate || null;
+    const newStorage = storageConditions.trim() || null;
+    const mfgChanged = newMfgDate !== (product.manufacture_date || null);
+    const storageChanged = newStorage !== (product.storage_conditions || null);
+
+    if (mfgChanged && newMfgDate) {
+      if (newMfgDate > new Date().toISOString().slice(0, 10)) {
+        setErrorMessage("Ishlab chiqarilgan sana kelajakdagi sana bo'lishi mumkin emas.");
+        setIsSubmitting(false);
+        return;
+      }
+      if (product.expiry_date && newMfgDate > product.expiry_date) {
+        setErrorMessage("Ishlab chiqarilgan sana yaroqlilik muddatidan keyin bo'lishi mumkin emas.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     try {
       let changesCount = 0;
       warehouses.forEach((wh) => {
@@ -86,13 +119,32 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
         }
       });
 
+      if (mfgChanged || storageChanged) {
+        updateProduct(product.id, {
+          ...(mfgChanged ? { manufacture_date: newMfgDate } : {}),
+          ...(storageChanged ? { storage_conditions: newStorage } : {}),
+        });
+        recordLoginLog('movement_created', {
+          action: 'matrix_product_info_updated',
+          product_name: product.name,
+          ...(mfgChanged
+            ? { old_manufacture_date: product.manufacture_date || null, new_manufacture_date: newMfgDate }
+            : {}),
+          ...(storageChanged
+            ? { old_storage_conditions: product.storage_conditions || null, new_storage_conditions: newStorage }
+            : {}),
+          reason: reason.trim() || null,
+        });
+        changesCount++;
+      }
+
       if (changesCount > 0) {
         confetti({
           particleCount: 50,
           spread: 60,
           origin: { y: 0.6 },
         });
-        setSuccessMessage(`Mahsulot soni muvaffaqiyatli saqlandi! (${changesCount} ta ombor bo'yicha)`);
+        setSuccessMessage("O'zgarishlar muvaffaqiyatli saqlandi!");
         setTimeout(() => {
           setIsSubmitting(false);
           onClose();
@@ -134,7 +186,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-white">
-                Ombor Matritsasi: Mahsulot Sonini O'zgartirish
+                Ombor Matritsasi: Mahsulotni Tuzatish
               </h2>
             </div>
             <p className="text-xs text-slate-400 mt-0.5 font-medium line-clamp-1">
@@ -281,6 +333,58 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
             </div>
           </div>
 
+          {/* Manufacture date & storage temperature */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1">
+                <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+                <span>{t.manufactureDate}</span>
+              </label>
+              <input
+                type="date"
+                value={manufactureDate}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setManufactureDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+              <p className="mt-1 text-[10px] text-slate-500">
+                Eski: <span className="font-mono">{product.manufacture_date || '—'}</span>
+              </p>
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1">
+                <Thermometer className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Saqlash harorati / sharoiti</span>
+              </label>
+              <input
+                type="text"
+                value={storageConditions}
+                onChange={(e) => setStorageConditions(e.target.value)}
+                placeholder="Masalan: +2°C...+8°C"
+                className="w-full px-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+              <p className="mt-1 text-[10px] text-slate-500 truncate">
+                Eski: {product.storage_conditions || '—'}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5 -mt-1">
+            {STORAGE_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setStorageConditions(preset)}
+                className={`text-[10px] px-2 py-0.5 rounded-lg border transition-all ${
+                  storageConditions === preset
+                    ? 'bg-cyan-600/30 text-cyan-200 border-cyan-500/50 font-semibold'
+                    : 'bg-slate-900/60 text-slate-400 border-white/5 hover:border-white/20'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+
           {/* Reason Input & Preset Chips */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -327,7 +431,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
               className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all transform hover:scale-[1.02] disabled:opacity-50"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isSubmitting ? 'Saqlanmoqda...' : 'Miqdorlarni Saqlash'}</span>
+              <span>{isSubmitting ? 'Saqlanmoqda...' : 'Saqlash'}</span>
             </button>
           </div>
         </form>
