@@ -1,10 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
 import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, CorrectionChanges, LoginLog, UserRole } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
 import { supabase, isSupabaseConfigured, authJsonHeaders } from './supabase/client';
+import { CloudSnapshot, buildSnapshot, fetchCloud, loadKnownIds, mergeProducts, mergeStock, pushChanges, rememberKnownIds } from './cloud-sync';
 
 // SHA-256 hash utility (sync version using SubtleCrypto workaround)
 export async function hashPassword(password: string): Promise<string> {
@@ -182,14 +183,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Auth state
   const [authenticatedUserId, setAuthenticatedUserId] = useState<string | null>(null);
 
+  // Cloud sync (Supabase app_products / app_stock): pull on load, login and when the tab
+  // comes back; push local changes shortly after they happen.
+  const cloudSnapshotRef = useRef<CloudSnapshot | null>(null);
+  const cloudPushingRef = useRef(false);
+  const cloudPushPendingRef = useRef(false);
+  const [cloudRevision, setCloudRevision] = useState(0);
+
+  const syncWithCloud = async () => {
+    if (cloudPushingRef.current) return;
+    try {
+      const cloud = await fetchCloud();
+      if (!cloud) return;
+      const known = loadKnownIds();
+      const snapshot = cloudSnapshotRef.current;
+      setProducts((prev) => mergeProducts(prev, cloud, known, snapshot));
+      setStock((prev) => mergeStock(prev, cloud, known));
+      cloudSnapshotRef.current = buildSnapshot(cloud);
+      rememberKnownIds(cloud.products.map((p) => p.id));
+      setCloudRevision((r) => r + 1);
+    } catch (err) {
+      console.warn('Cloud sync: pull failed', err);
+    }
+  };
+
   // The shared store can't be written on Vercel, so it only holds the baseline catalog.
   // Add what it has that this browser lacks, but never replace what was saved here:
   // replacing dropped newly added products and edited quantities on every login.
   const mergeServerData = (serverData: any) => {
-    if (Array.isArray(serverData.products) && serverData.products.length > 0) {
+    // Once the cloud holds the catalog it is the source of truth for products and stock;
+    // merging the baseline again would bring back products deleted there.
+    const cloudHasCatalog = (cloudSnapshotRef.current?.products.size ?? 0) > 0;
+    if (!cloudHasCatalog && Array.isArray(serverData.products) && serverData.products.length > 0) {
       setProducts((prev) => mergeMissing(prev, serverData.products as Product[], (p) => p.id));
     }
-    if (Array.isArray(serverData.stock) && serverData.stock.length > 0) {
+    if (!cloudHasCatalog && Array.isArray(serverData.stock) && serverData.stock.length > 0) {
       setStock((prev) => mergeMissing(prev, serverData.stock as StockBalance[], (b) => `${b.product_id}|${b.warehouse_id}`));
     }
     if (Array.isArray(serverData.movements) && serverData.movements.length > 0) {
@@ -229,6 +257,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           } catch (err) {
             console.warn('Server sync fetch failed, falling back to localStorage:', err);
           } finally {
+            await syncWithCloud();
             setIsHydrated(true);
           }
         };
@@ -347,6 +376,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.LOGIN_LOGS, JSON.stringify(loginLogs));
     }
   }, [loginLogs, isHydrated]);
+
+  const productsRef = useRef(products);
+  const stockRef = useRef(stock);
+  productsRef.current = products;
+  stockRef.current = stock;
+
+  // Upload new and changed products and balances (and deletions) to the cloud.
+  useEffect(() => {
+    if (!isHydrated || !cloudSnapshotRef.current) return;
+    const timer = setTimeout(async () => {
+      const snapshot = cloudSnapshotRef.current;
+      if (!snapshot) return;
+      if (cloudPushingRef.current) {
+        cloudPushPendingRef.current = true;
+        return;
+      }
+      cloudPushingRef.current = true;
+      try {
+        const pushedIds = await pushChanges(productsRef.current, stockRef.current, snapshot);
+        if (pushedIds.length > 0) rememberKnownIds(pushedIds);
+      } catch (err) {
+        console.warn('Cloud sync: upload failed, will retry on the next change', err);
+      } finally {
+        cloudPushingRef.current = false;
+        if (cloudPushPendingRef.current) {
+          cloudPushPendingRef.current = false;
+          setCloudRevision((r) => r + 1);
+        }
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [products, stock, isHydrated, cloudRevision]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') syncWithCloud();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   // Supabase Auth session sync & real DB user profiles
   useEffect(() => {
@@ -496,6 +565,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           mergeServerData(serverData);
         }
       } catch (e) {}
+      await syncWithCloud();
 
       const userRole = (foundUser?.role || 'warehouse_staff') as UserRole;
 
