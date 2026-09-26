@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ProductSearchSelect } from '../../components/ProductSearchSelect';
+import { ModalPortal } from '../../components/ModalPortal';
 
 export default function InvoicesPage() {
   const { invoices, warehouses, productsWithStock, createSaleInvoice, updateInvoiceCreator, cancelInvoice, currentUser, users } = useApp();
@@ -485,8 +486,9 @@ export default function InvoicesPage() {
 
       {/* Invoice Detail Modal */}
       {selectedInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-          <div className="relative w-full max-w-3xl my-8 p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl bg-slate-950/90">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-3xl my-auto p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl bg-slate-950/90">
             <button
               onClick={() => setSelectedInvoice(null)}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
@@ -671,12 +673,14 @@ export default function InvoicesPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Cancel Confirmation Modal */}
       {cancelTargetId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-md p-6 rounded-2xl glass-panel border border-rose-500/30 bg-slate-950 shadow-2xl space-y-4">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative my-auto w-full max-w-md p-6 rounded-2xl glass-panel border border-rose-500/30 bg-slate-950 shadow-2xl space-y-4">
             <div className="flex items-center gap-3 text-rose-400">
               <AlertTriangle className="w-6 h-6 flex-shrink-0" />
               <h3 className="text-lg font-bold text-white">Fakturani bekor qilish</h3>
@@ -705,12 +709,14 @@ export default function InvoicesPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Create New Invoice Modal */}
       {isNewInvoiceOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-          <div className="relative w-full max-w-2xl my-8 p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl bg-slate-950/95">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-2xl my-auto p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl bg-slate-950/95">
             <button
               onClick={() => setIsNewInvoiceOpen(false)}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
@@ -949,12 +955,14 @@ export default function InvoicesPage() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Company Settings Modal */}
       {isCompanySettingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-lg p-6 rounded-2xl glass-panel border border-white/10 bg-slate-950/95 shadow-2xl space-y-4">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative my-auto w-full max-w-lg p-6 rounded-2xl glass-panel border border-white/10 bg-slate-950/95 shadow-2xl space-y-4">
             <button
               onClick={() => setIsCompanySettingsOpen(false)}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
@@ -1056,6 +1064,7 @@ export default function InvoicesPage() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );

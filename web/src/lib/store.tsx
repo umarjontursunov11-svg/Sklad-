@@ -156,6 +156,13 @@ const STORAGE_KEYS = {
   CURRENT_WH: 'wms_current_wh_v5_auth',
 };
 
+// Keeps every local item and appends only the server items this browser doesn't have yet.
+function mergeMissing<T>(local: T[], server: T[], key: (item: T) => string): T[] {
+  const known = new Set(local.map(key));
+  const missing = server.filter((item) => !known.has(key(item)));
+  return missing.length > 0 ? [...local, ...missing] : local;
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [warehouses] = useState<Warehouse[]>(INITIAL_WAREHOUSES);
   const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
@@ -175,6 +182,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Auth state
   const [authenticatedUserId, setAuthenticatedUserId] = useState<string | null>(null);
 
+  // The shared store can't be written on Vercel, so it only holds the baseline catalog.
+  // Add what it has that this browser lacks, but never replace what was saved here:
+  // replacing dropped newly added products and edited quantities on every login.
+  const mergeServerData = (serverData: any) => {
+    if (Array.isArray(serverData.products) && serverData.products.length > 0) {
+      setProducts((prev) => mergeMissing(prev, serverData.products as Product[], (p) => p.id));
+    }
+    if (Array.isArray(serverData.stock) && serverData.stock.length > 0) {
+      setStock((prev) => mergeMissing(prev, serverData.stock as StockBalance[], (b) => `${b.product_id}|${b.warehouse_id}`));
+    }
+    if (Array.isArray(serverData.movements) && serverData.movements.length > 0) {
+      setMovements((prev) => mergeMissing(prev, serverData.movements as StockMovement[], (m) => m.id));
+    }
+    if (Array.isArray(serverData.invoices) && serverData.invoices.length > 0) {
+      setInvoices((prev) => mergeMissing(prev, serverData.invoices as InvoiceWithItems[], (i) => i.id));
+    }
+    if (Array.isArray(serverData.corrections) && serverData.corrections.length > 0) {
+      setCorrectionRequests((prev) => mergeMissing(prev, serverData.corrections as CorrectionRequest[], (c) => c.id));
+    }
+  };
+
   // Load from localStorage only after initial client mount to prevent SSR hydration mismatch
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -193,12 +221,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 setUsers(sanitized);
                 localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(sanitized));
               }
-              if (Array.isArray(serverData.products) && serverData.products.length > 0) setProducts(serverData.products);
-              if (Array.isArray(serverData.stock) && serverData.stock.length > 0) setStock(serverData.stock);
-              if (Array.isArray(serverData.movements) && serverData.movements.length > 0) setMovements(serverData.movements);
-              if (Array.isArray(serverData.invoices) && serverData.invoices.length > 0) setInvoices(serverData.invoices);
-              if (Array.isArray(serverData.corrections) && serverData.corrections.length > 0) setCorrectionRequests(serverData.corrections);
-              if (Array.isArray(serverData.loginLogs) && serverData.loginLogs.length > 0) setLoginLogs(serverData.loginLogs);
+              mergeServerData(serverData);
+              if (Array.isArray(serverData.loginLogs) && serverData.loginLogs.length > 0) {
+                setLoginLogs((prev) => mergeMissing(prev, serverData.loginLogs, (l) => l.id));
+              }
             }
           } catch (err) {
             console.warn('Server sync fetch failed, falling back to localStorage:', err);
@@ -467,11 +493,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const syncRes = await fetch('/api/sync', { headers: await authJsonHeaders() });
         if (syncRes.ok) {
           const serverData = await syncRes.json();
-          if (Array.isArray(serverData.products) && serverData.products.length > 0) setProducts(serverData.products);
-          if (Array.isArray(serverData.stock) && serverData.stock.length > 0) setStock(serverData.stock);
-          if (Array.isArray(serverData.movements) && serverData.movements.length > 0) setMovements(serverData.movements);
-          if (Array.isArray(serverData.invoices) && serverData.invoices.length > 0) setInvoices(serverData.invoices);
-          if (Array.isArray(serverData.corrections) && serverData.corrections.length > 0) setCorrectionRequests(serverData.corrections);
+          mergeServerData(serverData);
         }
       } catch (e) {}
 
