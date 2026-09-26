@@ -17,6 +17,7 @@ import {
   Sparkles,
   Layers,
   Calendar,
+  CalendarX,
   Thermometer,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -39,6 +40,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [manufactureDate, setManufactureDate] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
   const [storageConditions, setStorageConditions] = useState('');
 
   const STORAGE_PRESETS = [
@@ -56,6 +58,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
       });
       setQuantities(initialMap);
       setManufactureDate(product.manufacture_date || '');
+      setExpiryDate(product.expiry_date || '');
       setStorageConditions(product.storage_conditions || '');
       setSuccessMessage(null);
       setErrorMessage(null);
@@ -87,8 +90,10 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
     setIsSubmitting(true);
 
     const newMfgDate = manufactureDate || null;
+    const newExpDate = expiryDate || null;
     const newStorage = storageConditions.trim() || null;
     const mfgChanged = newMfgDate !== (product.manufacture_date || null);
+    const expChanged = newExpDate !== (product.expiry_date || null);
     const storageChanged = newStorage !== (product.storage_conditions || null);
 
     if (mfgChanged && newMfgDate) {
@@ -97,11 +102,11 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
         setIsSubmitting(false);
         return;
       }
-      if (product.expiry_date && newMfgDate > product.expiry_date) {
-        setErrorMessage("Ishlab chiqarilgan sana yaroqlilik muddatidan keyin bo'lishi mumkin emas.");
-        setIsSubmitting(false);
-        return;
-      }
+    }
+    if ((mfgChanged || expChanged) && newMfgDate && newExpDate && newMfgDate > newExpDate) {
+      setErrorMessage("Ishlab chiqarilgan sana yaroqlilik muddatidan keyin bo'lishi mumkin emas.");
+      setIsSubmitting(false);
+      return;
     }
 
     try {
@@ -120,9 +125,10 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
         }
       });
 
-      if (mfgChanged || storageChanged) {
+      if (mfgChanged || expChanged || storageChanged) {
         updateProduct(product.id, {
           ...(mfgChanged ? { manufacture_date: newMfgDate } : {}),
+          ...(expChanged ? { expiry_date: newExpDate } : {}),
           ...(storageChanged ? { storage_conditions: newStorage } : {}),
         });
         recordLoginLog('movement_created', {
@@ -130,6 +136,9 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
           product_name: product.name,
           ...(mfgChanged
             ? { old_manufacture_date: product.manufacture_date || null, new_manufacture_date: newMfgDate }
+            : {}),
+          ...(expChanged
+            ? { old_expiry_date: product.expiry_date || null, new_expiry_date: newExpDate }
             : {}),
           ...(storageChanged
             ? { old_storage_conditions: product.storage_conditions || null, new_storage_conditions: newStorage }
@@ -338,7 +347,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
             </div>
           </div>
 
-          {/* Manufacture date & storage temperature */}
+          {/* Manufacture date, expiry date & storage temperature */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1">
@@ -357,6 +366,22 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
               </p>
             </div>
             <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1">
+                <CalendarX className="w-3.5 h-3.5 text-rose-400" />
+                <span>{t.expiryDate}</span>
+              </label>
+              <input
+                type="date"
+                value={expiryDate}
+                min={manufactureDate || undefined}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+              <p className="mt-1 text-[10px] text-slate-500">
+                Eski: <span className="font-mono">{product.expiry_date || '—'}</span>
+              </p>
+            </div>
+            <div className="sm:col-span-2">
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-1">
                 <Thermometer className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Saqlash harorati / sharoiti</span>
