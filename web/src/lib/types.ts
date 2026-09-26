@@ -108,6 +108,14 @@ export interface InvoiceWithItems extends Invoice {
   warehouse_name?: string;
 }
 
+export interface CorrectionChanges {
+  quantity?: number;
+  movement_type?: MovementType;
+  notes?: string;
+  manufacture_date?: string | null;
+  storage_conditions?: string | null;
+}
+
 export type CorrectionStatus = 'pending' | 'approved' | 'rejected';
 
 export interface CorrectionRequest {
@@ -122,10 +130,12 @@ export interface CorrectionRequest {
   requester_employee_id?: string | null;
   requested_by_employee_id?: string;
   reason: string;
-  requested_changes: {
+  requested_changes: CorrectionChanges;
+  // Snapshot of the values at the time the request was sent (for "old → new" display)
+  original_values?: {
     quantity?: number;
-    movement_type?: MovementType;
-    notes?: string;
+    manufacture_date?: string | null;
+    storage_conditions?: string | null;
   };
   requested_change?: {
     new_quantity?: number;
