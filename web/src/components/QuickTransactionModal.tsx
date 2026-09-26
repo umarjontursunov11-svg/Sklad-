@@ -27,6 +27,7 @@ import {
   Trash2,
   QrCode,
 } from 'lucide-react';
+import { ModalPortal } from './ModalPortal';
 
 interface QuickTransactionModalProps {
   product: ProductWithStock | null;
@@ -275,8 +276,9 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-2xl my-8 p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
+    <ModalPortal>
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+      <div className="relative w-full max-w-2xl my-auto p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
@@ -848,5 +850,6 @@ export const QuickTransactionModal: React.FC<QuickTransactionModalProps> = ({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };

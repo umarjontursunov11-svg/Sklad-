@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { StaffRegisterModal } from '../../components/StaffRegisterModal';
 import { UserProfile } from '../../lib/types';
+import { ModalPortal } from '../../components/ModalPortal';
 
 export default function AdminPage() {
   const {
@@ -305,8 +306,9 @@ export default function AdminPage() {
 
       {/* Delete Staff Confirmation Modal (Admin only) */}
       {deletingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-          <div className="relative w-full max-w-md p-6 rounded-3xl glass-panel border border-rose-500/30 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="relative my-auto w-full max-w-md p-6 rounded-3xl glass-panel border border-rose-500/30 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-rose-500" />
 
             <div className="flex items-start gap-3.5 mb-4">
@@ -380,6 +382,7 @@ export default function AdminPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Staff Self-Registration Modal */}

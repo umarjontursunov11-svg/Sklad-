@@ -25,6 +25,7 @@ import {
 import { QRModal } from '../../components/QRModal';
 import { BatchQRPrintModal } from '../../components/BatchQRPrintModal';
 import { QuickTransactionModal } from '../../components/QuickTransactionModal';
+import { ModalPortal } from '../../components/ModalPortal';
 
 export default function ProductsPage() {
   const {
@@ -85,6 +86,12 @@ export default function ProductsPage() {
     e.preventDefault();
     if (!name.trim()) return;
 
+    // The selector shows the first warehouse when nothing was picked yet, so use it
+    // rather than an empty id that would attach the intake stock to no warehouse.
+    const intakeWarehouseId = warehouses.some((w) => w.id === initialWarehouseId)
+      ? initialWarehouseId
+      : warehouses[0]?.id || '';
+
     setIsSubmitting(true);
     try {
       await addProduct({
@@ -97,8 +104,8 @@ export default function ProductsPage() {
         expiry_date: expiryDate.trim() || null,
         storage_conditions: storageConditions.trim() || null,
         initial_stock:
-          initialQty > 0
-            ? [{ warehouse_id: initialWarehouseId, quantity: Number(initialQty) }]
+          initialQty > 0 && intakeWarehouseId
+            ? [{ warehouse_id: intakeWarehouseId, quantity: Number(initialQty) }]
             : undefined,
       });
 
@@ -396,8 +403,9 @@ export default function ProductsPage() {
 
       {/* Create Product Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative my-auto w-full max-w-lg p-6 overflow-hidden rounded-2xl glass-panel border border-white/10 shadow-2xl">
             <h3 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
               <Plus className="w-5 h-5 text-indigo-400" /> {t.registerProductTitle}
             </h3>
@@ -463,7 +471,8 @@ export default function ProductsPage() {
               <div>
                 <label className="block text-slate-300 font-medium mb-1">{t.imageUrlField}</label>
                 <input
-                  type="url"
+                  type="text"
+                  inputMode="url"
                   placeholder="https://images.unsplash.com/..."
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
@@ -589,6 +598,7 @@ export default function ProductsPage() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Single QR Modal */}

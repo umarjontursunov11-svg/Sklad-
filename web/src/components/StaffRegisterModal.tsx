@@ -23,6 +23,7 @@ import {
   Copy,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { ModalPortal } from './ModalPortal';
 
 interface StaffRegisterModalProps {
   isOpen: boolean;
@@ -185,8 +186,9 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-xl p-6 sm:p-7 rounded-3xl glass-panel border border-white/10 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden max-h-[90vh] overflow-y-auto">
+    <ModalPortal>
+    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="relative my-auto w-full max-w-xl p-6 sm:p-7 rounded-3xl glass-panel border border-white/10 bg-slate-950/95 shadow-2xl text-slate-100 overflow-hidden">
         {/* Glow Header Accent */}
         <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-500 via-indigo-500 to-amber-500" />
 
@@ -488,5 +490,6 @@ export const StaffRegisterModal: React.FC<StaffRegisterModalProps> = ({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 };

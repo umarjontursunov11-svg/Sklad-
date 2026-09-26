@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { QuickTransactionModal } from '../../components/QuickTransactionModal';
 import { ProductWithStock, StockMovement, CorrectionRequest } from '../../lib/types';
+import { ModalPortal } from '../../components/ModalPortal';
 
 export default function TransactionsPage() {
   const {
@@ -544,8 +545,9 @@ export default function TransactionsPage() {
 
       {/* Staff Submit Correction Modal */}
       {correctionTargetMovement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="w-full max-w-md p-6 rounded-2xl glass-panel border border-white/10 shadow-2xl animate-fadeIn">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+          <div className="my-auto w-full max-w-md p-6 rounded-2xl glass-panel border border-white/10 shadow-2xl animate-fadeIn">
             <div className="flex items-center justify-between pb-4 border-b border-white/10">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <FileEdit className="w-5 h-5 text-indigo-400" />
@@ -683,12 +685,14 @@ export default function TransactionsPage() {
             </form>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Manager Review Modal */}
       {reviewModalTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="w-full max-w-md p-6 rounded-2xl glass-panel border border-white/10 shadow-2xl animate-fadeIn">
+        <ModalPortal>
+        <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md">
+          <div className="my-auto w-full max-w-md p-6 rounded-2xl glass-panel border border-white/10 shadow-2xl animate-fadeIn">
             <div className="flex items-center justify-between pb-4 border-b border-white/10">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <ShieldCheck className="w-5 h-5 text-indigo-400" />
@@ -760,6 +764,7 @@ export default function TransactionsPage() {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {selectedProduct && (
