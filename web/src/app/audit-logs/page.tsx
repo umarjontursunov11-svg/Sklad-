@@ -116,6 +116,12 @@ export default function AuditLogsPage() {
             <ArrowDownUp className="w-3 h-3" /> Harakat
           </span>
         );
+      case 'product_updated':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+            <FileEdit className="w-3 h-3" /> Mahsulot tahrirlandi
+          </span>
+        );
       case 'invoice_created':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
@@ -257,6 +263,7 @@ export default function AuditLogsPage() {
               <option value="login">Tizimga kirish (Login)</option>
               <option value="logout">Chiqish (Logout)</option>
               <option value="movement_created">Kirim / Chiqim</option>
+              <option value="product_updated">Mahsulot tahrirlandi</option>
               <option value="invoice_created">Sotuv fakturasi</option>
               <option value="correction_requested">Tuzatish so'rovi</option>
               <option value="correction_approved">Tuzatish tasdiqlandi</option>

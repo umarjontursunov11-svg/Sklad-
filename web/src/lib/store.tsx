@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import QRCode from 'qrcode';
-import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, CorrectionChanges, LoginLog, UserRole } from './types';
+import { Warehouse, UserProfile, Product, StockBalance, StockMovement, ProductWithStock, MovementType, ProductUnit, InvoiceWithItems, InvoiceItem, CorrectionRequest, CorrectionChanges, LoginLog, UserRole, STOCK_ADJUST_ROLES } from './types';
 import { INITIAL_WAREHOUSES, INITIAL_USERS, INITIAL_PRODUCTS, INITIAL_STOCK, INITIAL_MOVEMENTS, INITIAL_INVOICES, INITIAL_CORRECTIONS, INITIAL_LOGIN_LOGS } from './mock-data';
 import { supabase, isSupabaseConfigured, authJsonHeaders } from './supabase/client';
 import { CloudSnapshot, buildSnapshot, fetchCloud, loadKnownIds, mergeProducts, mergeStock, pushChanges, rememberKnownIds } from './cloud-sync';
@@ -1287,6 +1287,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }): { success: boolean; error?: string; oldQuantity?: number; newQuantity?: number } => {
     const { productId, warehouseId, newQuantity, reason } = params;
     const cleanQty = Math.max(0, Math.round(Number(newQuantity) * 1000) / 1000 || 0);
+
+    if (!STOCK_ADJUST_ROLES.includes(currentUser.role)) {
+      return { success: false, error: "Qoldiqni to'g'ridan-to'g'ri o'zgartirishga ruxsat yo'q. Tuzatish so'rovini yuboring." };
+    }
 
     const product = products.find((p) => p.id === productId);
     if (!product) {

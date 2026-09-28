@@ -1,4 +1,8 @@
 export type UserRole = 'admin' | 'warehouse_manager' | 'receiver' | 'dispatcher' | 'warehouse_staff';
+// Roles allowed to set stock balances and product details directly from the warehouse matrix.
+// Other roles send a correction request instead.
+export const STOCK_ADJUST_ROLES: UserRole[] = ['admin', 'warehouse_manager'];
+
 export type MovementType = 'inbound' | 'outbound' | 'transfer';
 export type ProductUnit = 'piece' | 'kg' | 'liter' | 'box' | 'meter' | 'pallet' | 'ampoule' | 'set';
 
@@ -156,6 +160,7 @@ export type LoginEventType =
   | 'admin_access_success'
   | 'admin_access_failed'
   | 'movement_created'
+  | 'product_updated'
   | 'invoice_created'
   | 'correction_requested'
   | 'correction_approved'

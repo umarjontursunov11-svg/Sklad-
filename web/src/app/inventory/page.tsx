@@ -17,10 +17,11 @@ import {
 import { QuickTransactionModal } from '../../components/QuickTransactionModal';
 import { QRModal } from '../../components/QRModal';
 import { MatrixStockEditModal } from '../../components/MatrixStockEditModal';
-import { ProductWithStock } from '../../lib/types';
+import { ProductWithStock, STOCK_ADJUST_ROLES } from '../../lib/types';
 
 export default function InventoryPage() {
-  const { productsWithStock, warehouses, adjustStockBalance } = useApp();
+  const { productsWithStock, warehouses, adjustStockBalance, currentUser } = useApp();
+  const canAdjust = STOCK_ADJUST_ROLES.includes(currentUser.role);
   const { t } = useI18n();
 
   const [search, setSearch] = useState('');
@@ -190,11 +191,14 @@ export default function InventoryPage() {
                       ) : (
                         <div
                           onClick={() => {
+                            if (!canAdjust) return;
                             setInlineEdit({ productId: item.id, warehouseId: wh.id });
                             setInlineValue(String(qty));
                           }}
-                          className="inline-flex items-center justify-end gap-1.5 cursor-pointer py-1 px-2 rounded-lg hover:bg-white/10 transition-colors group/cell"
-                          title="Miqdorni tahrirlash uchun bosing"
+                          className={`inline-flex items-center justify-end gap-1.5 py-1 px-2 rounded-lg group/cell ${
+                            canAdjust ? 'cursor-pointer hover:bg-white/10 transition-colors' : ''
+                          }`}
+                          title={canAdjust ? 'Miqdorni tahrirlash uchun bosing' : undefined}
                         >
                           <span
                             className={
@@ -203,7 +207,9 @@ export default function InventoryPage() {
                           >
                             {qty}
                           </span>
-                          <Edit2 className="w-3 h-3 text-indigo-400 opacity-0 group-hover/cell:opacity-100 transition-opacity" />
+                          {canAdjust && (
+                            <Edit2 className="w-3 h-3 text-indigo-400 opacity-0 group-hover/cell:opacity-100 transition-opacity" />
+                          )}
                         </div>
                       )}
                     </td>
@@ -218,14 +224,16 @@ export default function InventoryPage() {
 
                 <td className="py-3.5 px-4 text-center">
                   <div className="flex items-center justify-center gap-1.5">
-                    <button
-                      onClick={() => setStockEditProduct(item)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-500/40 rounded-lg transition-colors shadow-sm"
-                      title="Matritsa bo'yicha mahsulot sonini to'liq sozlash"
-                    >
-                      <SlidersHorizontal className="w-3 h-3 text-indigo-200" />
-                      <span>Sozlash</span>
-                    </button>
+                    {canAdjust && (
+                      <button
+                        onClick={() => setStockEditProduct(item)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-white bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-500/40 rounded-lg transition-colors shadow-sm"
+                        title="Matritsa bo'yicha mahsulot sonini to'liq sozlash"
+                      >
+                        <SlidersHorizontal className="w-3 h-3 text-indigo-200" />
+                        <span>Sozlash</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => setSelectedProduct(item)}
                       className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg transition-colors"

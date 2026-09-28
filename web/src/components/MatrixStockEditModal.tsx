@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../lib/store';
 import { useI18n } from '../lib/i18n';
-import { ProductWithStock } from '../lib/types';
+import { ProductWithStock, STOCK_ADJUST_ROLES } from '../lib/types';
 import {
   X,
   Boxes,
@@ -27,11 +27,19 @@ interface MatrixStockEditModalProps {
   onClose: () => void;
 }
 
+// Today's date as YYYY-MM-DD in the device's local time zone (toISOString() is UTC,
+// which in Tashkent is still "yesterday" until 05:00).
+const localTodayISO = () => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
 export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
   product,
   onClose,
 }) => {
-  const { warehouses, adjustStockBalance, updateProduct, recordLoginLog } = useApp();
+  const { warehouses, adjustStockBalance, updateProduct, recordLoginLog, currentUser } = useApp();
   const { t } = useI18n();
 
   const [quantities, setQuantities] = useState<{ [whId: string]: number }>({});
@@ -89,6 +97,12 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
     setErrorMessage(null);
     setIsSubmitting(true);
 
+    if (!STOCK_ADJUST_ROLES.includes(currentUser.role)) {
+      setErrorMessage("Bu oynadan o'zgartirishga ruxsatingiz yo'q. Tuzatish so'rovini yuboring.");
+      setIsSubmitting(false);
+      return;
+    }
+
     const newMfgDate = manufactureDate || null;
     const newExpDate = expiryDate || null;
     const newStorage = storageConditions.trim() || null;
@@ -97,7 +111,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
     const storageChanged = newStorage !== (product.storage_conditions || null);
 
     if (mfgChanged && newMfgDate) {
-      if (newMfgDate > new Date().toISOString().slice(0, 10)) {
+      if (newMfgDate > localTodayISO()) {
         setErrorMessage("Ishlab chiqarilgan sana kelajakdagi sana bo'lishi mumkin emas.");
         setIsSubmitting(false);
         return;
@@ -111,19 +125,30 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
 
     try {
       let changesCount = 0;
+      const failures: string[] = [];
       warehouses.forEach((wh) => {
         const oldVal = Number(product.warehouse_stock[wh.id] ?? 0);
         const newVal = Number(quantities[wh.id] ?? 0);
         if (oldVal !== newVal) {
-          adjustStockBalance({
+          const result = adjustStockBalance({
             productId: product.id,
             warehouseId: wh.id,
             newQuantity: newVal,
             reason: reason.trim() || undefined,
           });
-          changesCount++;
+          if (result.success) {
+            changesCount++;
+          } else {
+            failures.push(`${wh.name}: ${result.error || 'xatolik'}`);
+          }
         }
       });
+
+      if (failures.length > 0) {
+        setErrorMessage(`Ba'zi omborlar saqlanmadi: ${failures.join('; ')}`);
+        setIsSubmitting(false);
+        return;
+      }
 
       if (mfgChanged || expChanged || storageChanged) {
         updateProduct(product.id, {
@@ -131,7 +156,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
           ...(expChanged ? { expiry_date: newExpDate } : {}),
           ...(storageChanged ? { storage_conditions: newStorage } : {}),
         });
-        recordLoginLog('movement_created', {
+        recordLoginLog('product_updated', {
           action: 'matrix_product_info_updated',
           product_name: product.name,
           ...(mfgChanged
@@ -357,7 +382,7 @@ export const MatrixStockEditModal: React.FC<MatrixStockEditModalProps> = ({
               <input
                 type="date"
                 value={manufactureDate}
-                max={new Date().toISOString().slice(0, 10)}
+                max={localTodayISO()}
                 onChange={(e) => setManufactureDate(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
               />
